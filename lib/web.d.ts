@@ -1,0 +1,155 @@
+import { type CalendarConfig } from './config.js';
+import { type CalendarSettingsValue } from './settings.js';
+import type { CalendarEvent } from './ical.js';
+import type { AvailabilityInput, AvailabilityResult } from './availability.js';
+/** 面板与浏览器说话的同源路由；带 -pro 后缀，避免与原插件注册同一条路由。 */
+export declare const SETTINGS_ROUTE = "/_dsh/dsh-calendar-pro/settings";
+/** Host 头裁决：undefined = 放行，否则给出拒绝原因。 */
+export declare function hostVerdict(host: unknown): string | undefined;
+/** 写操作裁决：undefined = 放行，否则给出状态码与原因。 */
+export declare function postVerdict(headers: Record<string, unknown>): {
+    status: number;
+    message: string;
+} | undefined;
+/** 面板需要的服务面；测试里可以塞假的进来。 */
+export interface CalendarServiceLike {
+    availability?(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult>;
+    get?(uid: string, signal?: AbortSignal): Promise<CalendarEvent>;
+    list(start: string, end: string, options?: unknown, signal?: AbortSignal): Promise<CalendarEvent[]>;
+    create(fields: unknown, signal?: AbortSignal): Promise<CalendarEvent>;
+    update(uid: string, changes: unknown, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent>;
+    delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{
+        uid: string;
+        href: string;
+    }>;
+}
+/** 面板用于读写 settings 命名空间的最小面（index.ts 在 settings 服务到位后接上）。 */
+export interface CalendarSettingsFace {
+    /** 'settings' = 宿主命名空间；'file' = 插件自己的兜底文件。 */
+    kind?: 'settings' | 'file';
+    read(): Record<string, unknown>;
+    descriptor(): {
+        revision?: number;
+        user?: Record<string, unknown>;
+    } | undefined;
+    replace(value: Record<string, unknown>, revision: number): Promise<void>;
+}
+/**
+ * 由一个「宿主 settings provider + 可选 scope」拼出面板要的读写面。
+ *
+ * 注册**不在这里**：宿主的 register 内部会 `ctx.effect(...)`，必须发生在插件加载的同步阶段；
+ * 在请求处理里调用它会失败（此前就这样：看着「接上了」，真写的时候报 namespace is not registered）。
+ */
+export declare function settingsFaceOf(provider: any, scope: any, ns?: string): CalendarSettingsFace;
+/** 面板要读写的连接字段。空串 = 保持不变，null = 明确清除。 */
+export declare const CONNECTION_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl"];
+/**
+ * 真正会落盘的键：连接字段 + 数据源选择。
+ *
+ * `backend` 必须在这一组里 —— 它曾经只存在于 CONNECTION_KEYS 之外，
+ * 于是 mergeConnection 把它过滤掉、mutate 的 ops 也不带它：setBackend 返回成功，
+ * 读回来还是 null，界面永远停在「开始使用日历」。
+ */
+export declare const WRITABLE_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl", "backend"];
+/**
+ * Harness 0.1.7 宿主的读写面：真相就是本 entry 的配置，不再有独立命名空间文档。
+ *
+ * 两处与 {@link settingsFaceOf} 不同，都是被新接口逼出来的：
+ *   - read 直接投影活配置（profile 里那一份），不必问 describe()；
+ *   - 写用 `mutate` 的逐字段 set/unset：面板的「清空」要真的清掉，
+ *     而 `replace` 会把整段 live 字段重置成「下层继承值 + 本次提交」。
+ * 宿主没有 mutate 时才退回 replace。
+ * @param provider 宿主 settings 服务（0.1.7 形态）。
+ * @param entryId 本实例在 profile 里的 entry id（表单就以它为 ns）。
+ * @param read 读当前生效的连接字段（只带真的设过的键）。
+ */
+export declare function hostFormsFaceOf(provider: any, entryId: string, read: () => Record<string, unknown>): CalendarSettingsFace;
+export interface CalendarSettingsBackendOptions {
+    /** 静态配置，或一个 getter（面板保存后工具应当立刻用上新配置）。 */
+    config?: CalendarConfig | null | (() => CalendarConfig);
+    /** 测试用：替换真实 CalDAV 客户端（收到的是当前/拟议配置）。 */
+    serviceFactory?: (config: CalendarConfig) => CalendarServiceLike;
+    /** 测试用：替换「保存前的连接测试」。 */
+    probeFactory?: (config: CalendarConfig) => Promise<{
+        count: number;
+        sample: string[];
+    }>;
+    env?: NodeJS.ProcessEnv;
+    settings?: CalendarSettingsFace;
+    /** 宿主 ctx：用来懒接入 settings 服务（不赌子 fiber 的时序）。 */
+    ctx?: any;
+    /** settings 值变化时回调（index.ts 用它把新配置喂给工具层）。 */
+    onSettings?: (value: Record<string, unknown>) => void;
+    /** 注册命名空间时的 base 层（来自 cordis.patch.yml 的配置）。 */
+    settingsBase?: Partial<CalendarSettingsValue>;
+    /** 为什么没接上宿主 settings（面板要把它显示出来，而不是一句「不可用」）。 */
+    settingsReason?: string;
+    /**
+     * 表单在 describe() 里的 ns。老宿主是本插件的命名空间（`dsh-calendar-pro`），
+     * 0.1.7 起是 entry id（默认 `calendar`）—— 懒接入这条退路要靠它才认得出自己那一行。
+     */
+    settingsNs?: string;
+}
+/** 把「已存值 + 草稿」合并成要落盘的一版：草稿里缺席的键保留原值。 */
+export declare function mergeConnection(stored: Record<string, unknown>, draft: Record<string, unknown>): Record<string, unknown>;
+/**
+ * 浏览器端后端：把面板的四个动作翻译成 CalDAV 调用。
+ *
+ * 配置缺失不抛错：面板需要它来渲染「还没配置」的引导态，所以 status 动作
+ * 会回一个 configured:false，而不是让页面拿到 500。
+ */
+export declare class CalendarSettingsBackend {
+    private readonly options;
+    private cachedKey;
+    private cachedService;
+    private settings;
+    constructor(options?: CalendarSettingsBackendOptions);
+    /** settings 服务到位后接上（传 undefined 摘掉）—— 面板据此从只读变成可保存。 */
+    attachSettings(face: CalendarSettingsFace | undefined): void;
+    /**
+     * 兜底接入：注册由 index.ts 在插件加载时同步完成（那里能拿到活动作用域）。
+     * 这里只在「还没接上」时搭一次既有注册的车 —— 例如插件被重复 apply 时第二个实例，
+     * 它没资格注册，但可以照常读写（值从 describe() 描述符来，写走 provider.replace）。
+     */
+    private ensureSettings;
+    /**
+     * 当前生效配置：patch 行配置（或 getter 现取的那份）+ 面板写进 settings 的字段。
+     *
+     * 面板自己也要合并一遍，而不是只依赖传入的 getter —— 否则「面板显示的连接」
+     * 与「工具实际用的连接」就成了两份来源，保存成功却看到未配置的怪象。
+     */
+    private configOf;
+    /** Internal getter shared with the authenticated import carrier. Never sent to the browser. */
+    currentConfig(): CalendarConfig;
+    /**
+     * 切换数据源并落盘。切到远程前必须验证得通：宁可在这里报错，
+     * 也不要让面板切过去之后满屏「读取失败」。
+     */
+    private commitBackend;
+    /** 惰性解析配置；凭据/端点变化即重建（闭包内比较，不落盘不记日志）。 */
+    private service;
+    /**
+     * 连接摘要：面板要的每一个非敏感字段都在这里，密钥只回「有没有」。
+     * 未配置时 configured:false + reason（resolveConfig 的中文指引），面板据此渲染引导态。
+     */
+    connection(): Record<string, unknown>;
+    /** 兼容旧动作名：status 就是连接摘要。 */
+    status(): Record<string, unknown>;
+    /**
+     * 草稿 → 拟议配置：先与已存值合并（草稿缺席的键保留原值），再叠加到当前生效配置之上。
+     * 连接测试和保存都走这条路，所以「测试通过」与「保存后能用」看到的是同一份配置。
+     */
+    private proposed;
+    /** 真连一次：拿拟议配置列一下未来 30 天，能列出来就算通。 */
+    private probe;
+    private responseJson;
+    /** 路由入口。GET = 读状态，POST = 动作（list/create/update/delete）。 */
+    handle(req: any, res: any): Promise<void>;
+    /** 动作分发。每个动作自己校验参数，错误信息面向用户（中文，面板直接显示）。 */
+    private dispatch;
+}
+/**
+ * 把设置页里的日历面板挂到宿主 webserver 上。
+ * 与 dsh-email 相同：ctx.inject(['webServer']) + effect 注册，插件卸载即摘掉路由。
+ */
+export declare function installCalendarSettingsWeb(ctx: any, backend: CalendarSettingsBackend): void;

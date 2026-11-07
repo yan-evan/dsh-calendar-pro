@@ -1,0 +1,96 @@
+{
+  "name": "dsh-calendar-pro",
+  "version": "0.1.0",
+  "description": "为 DSH 打造的日历插件：开箱即用，让智能体帮助你管理日程。",
+  "icon": "./icon.svg",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md",
+    "MANUAL.md",
+    "CHANGELOG.en.md",
+    "MANUAL.en.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "icon.svg",
+    "assets/plugin-icon.webp",
+    "assets/wechat-qr.jpg",
+    "assets/screenshots",
+    "assets/logo_with_name.svg",
+    "assets/logo_with_name_dark.svg"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "holidays:check": "node scripts/verify-holidays.mjs",
+    "test": "npm run build && node --test \"test/*.test.mjs\"",
+    "prepublishOnly": "npm run build"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "plugin",
+    "calendar",
+    "caldav",
+    "ical",
+    "availability"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.3"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.3",
+    "ical.js": "^2.1.0",
+    "schemastery": "^3.18.0",
+    "timezones-ical-library": "2.3.2",
+    "tsdav": "^2.3.1",
+    "undici": "^8.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "jsdom": "^30.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.6.0"
+  },
+  "author": "yan-evan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yan-evan/dsh-calendar-pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yan-evan/dsh-calendar-pro/issues"
+  },
+  "homepage": "https://github.com/yan-evan/dsh-calendar-pro#readme"
+}

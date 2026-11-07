@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/
+*.swp
+.workbuddy/
+*.tgz
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+calendar.json
+*.ics
