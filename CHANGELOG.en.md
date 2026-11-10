@@ -9,6 +9,21 @@ All notable changes to this project are recorded in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-10
+
+### Added
+
+- Update notice: checks for a newer version once a day and shows a dismissible banner at the top
+- GitHub link in the home-page subtitle
+
+### Changed
+
+- iCloud connection form: username and password first, CalDAV URL after auto-discovery
+
+### Fixed
+
+- Local calendar mode wrongly showed the "no CalDAV account configured" page after switching views and returning
+
 ## [0.1.0] - 2026-11-07
 
 First release. A calendar plugin for DSH that works out of the box and lets the agent manage your schedule.

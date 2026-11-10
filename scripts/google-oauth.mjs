@@ -62,7 +62,7 @@ export function validateClientId(clientId) {
 export async function checkAuthUrl(url, fetchImpl = fetch) {
   try {
     const init = { redirect: 'manual', headers: { 'user-agent': 'dsh-calendar-oauth/1.0' } }
-    // 预检只是「顺手问一句」，不能把流程拖住：网络慢/被墙就用超时当「没意见」。
+    // 预检不阻塞主流程：超时（网络慢 / 被墙）视同通过。
     if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') init.signal = AbortSignal.timeout(4000)
     const response = await fetchImpl(url, init)
     if (response.status === 200 || response.status === 302 || response.status === 303) return undefined
@@ -203,7 +203,7 @@ export async function runFlow(options) {
   try {
     const pkce = pkcePair()
     const authUrl = buildAuthUrl({ clientId: options.clientId, redirectUri, scope: options.scope, codeChallenge: pkce.challenge })
-    // 打开浏览器之前先问一次 Google：地址本身不合法就别让人看 400 页。
+    // 打开浏览器前先校验授权地址，非法地址直接报错，不再落到浏览器的 400 页。
     const rejected = await checkAuthUrl(authUrl, options.fetchImpl)
     if (rejected !== undefined) {
       throw new Error('Google 拒绝了授权地址（' + rejected + '）。常见原因：clientId 是列表里的截断显示、客户端类型不是「桌面应用」、或 URL 在终端里被换行截断；也可能是该客户端所属项目没配 OAuth 同意屏。')

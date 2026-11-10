@@ -14,3 +14,6 @@ npm-debug.log*
 !.env.example
 calendar.json
 *.ics
+.backup/
+src/*.ts?*
+lib/*.js?*

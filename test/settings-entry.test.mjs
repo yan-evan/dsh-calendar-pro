@@ -55,7 +55,7 @@ test('日历面板订阅经期配置：设置页一保存，已挂载的日历�
     const panel = bodyOf(source, 'CalendarPanel')
     assert.match(panel, /useState\(getCycleConfig\)/, file + '：日历要以模块级配置起手，不能每次进页面都是空的')
     assert.match(panel, /subscribeCycle\(setCycle\)/, file + '：不订阅就收不到设置页的保存')
-    // 只有月 / 周两个视图拿 cycle 画线；议程是「接下来要干什么」的列表，用户明确不要在那儿出现横线。
+    // 经期横线只出现在月 / 周（日期网格）视图，议程视图不画。
     const passes = panel.match(/,\s*cycle\s*[},]/g) ?? []
     assert.equal(passes.length, 2, file + '：只该有月、周两处传 cycle（实际 ' + passes.length + ' 处）')
     const agenda = bodyOf(source, 'AgendaView')
@@ -207,7 +207,7 @@ test('空闲时段面板与日历视图互斥，且面板自己滚动（候选�
   assert.match(client, /availabilityOpen \? h\(AvailabilityPanel,/)
   // 工作台里面板吃满剩余高度并自己滚动，页脚仍固定在底部。
   assert.match(availability, /\.calendar-workbench \.calendar-availability\{flex:1;min-height:0;overflow:auto/)
-  // 候选数量要明说：查到了几个、列出了几条，别让用户猜是不是只查出来两条。
+  // 候选列表要标明总数，避免误以为只显示了部分。
   assert.match(availability, /result\.count\+text\(' 个候选/)
 })
 
@@ -298,8 +298,9 @@ test('iCloud 说明必须走 CalDAV 发现，不能让人去网页设置里找�
 })
 
 test('删除确认规则、经期提示与导入限制都要对得上代码', () => {
-  // 用户实测「删除 9 月所有日程」被直接删掉：原说明只管重复日程系列，文档却写成
-  // 「等不可逆操作，强制先确认」。另外经期 tooltip 挂在 16×2px 细线上，根本悬不到。
+  // 三条守卫：① 删除确认只覆盖重复日程系列，批量删除必须先列清单确认；
+  // ② 经期第 N 天用格内浮层（原生 title 挂 16×2px 细线上悬停不到）；
+  // ③ 手册里的数字逐条对后端常量。
   const tools = read('src/tools.ts')
   assert.match(tools, /批量删除/, 'calendar_delete 说明必须写清批量删除要先列清单确认')
 
@@ -369,4 +370,55 @@ test('MIT 证书同时保留上游与本项目版权声明', () => {
   const pkg = JSON.parse(read('package.json'))
   assert.equal(pkg.license, 'MIT', 'license 字段与 LICENSE 一致')
   assert.equal(pkg.author, 'yan-evan', 'author 与证书署名一致')
+})
+
+test('切回日历不误显示未配置：configured 初始值也要认本地日历', () => {
+  // 后端对本地日历仍回 configured:false（没有 CalDAV 凭据）。组件重挂载时若命中
+  // CONN_CACHE 就不会重新 fetch，初始值漏判 backend=local 会固化成「还没配置账号」引导页。
+  const c = read('templates/client.js')
+  const init = /const \[configured, setConfigured\] = useState\(\(\) => \([\s\S]{0,320}?\)\);/.exec(c)
+  assert.ok(init, 'configured 的 useState 初始化要存在')
+  assert.match(init[0], /backend === "local"/, '初始值必须与 fetch 后的判定一致')
+  assert.match(c, /setConfigured\(value \? \(value\.backend === "local"/, 'fetch 后的判定要保留本地日历分支')
+})
+
+test('主页顶部条：Star 外链 + 每日一次只读更新提醒', () => {
+  const c = read('templates/client.js')
+  const web = read('src/web.ts')
+  const build = read('scripts/build-client.mjs')
+  assert.match(build, /CALENDAR_VERSION/, '包版本要由构建注入')
+  assert.match(web, /action === 'checkUpdate'/, '后端要有只读检测动作')
+  assert.match(web, /AbortSignal\.timeout/, '外部请求要有超时')
+  for (const k of ['STAR_URL', 'UPDATE_STORAGE_KEY', 'isNewerVersion', 'CalendarTopBar']) {
+    assert.ok(c.includes(k), '前端缺少 ' + k)
+  }
+  assert.match(c, /compact === true \? null : h\(CalendarTopBar/, '浮层不能加顶部条')
+  assert.match(c, /rel: "noreferrer"/, '外链要带 noreferrer')
+  for (const k of ['top.subtitle', 'top.star', 'top.update', 'top.dismiss']) {
+    assert.ok(c.includes('"' + k + '":'), '缺少文案 ' + k)
+  }
+  // 不注入插件详情页插槽（不做官方 slot 标签）
+  assert.equal(/plugins\.detail\./.test(c), false, '不注入插件详情页插槽')
+  // 只读：不得出现安装 / 更新包的代码
+  assert.equal(/plugin\s+--profile|npm install|pnpm add/.test(c), false, '插件不得自行安装包')
+  // Star 并进副标题，不单独占一行
+  assert.match(c, /subtitle:h\('span',\{className:'dshc-page-subtitle'\}/, 'Star 要并入副标题')
+  assert.equal(/h\(CalendarTopBar[^\n]*\),\s*h\("a"[^\n]*dshc-star/.test(c), false, '顶部条里不能再放 Star')
+  assert.equal(/CALENDAR_MOCK_LATEST|DSHC_MOCK_UPDATE/.test(c + build), false, '不要演示假版本号的构建开关')
+  // /plugins 是宿主静态资源路由而非页面路由，不能作为跳转目标
+  assert.equal(/PLUGINS_PAGE_URL|href: ['"]\/plugins/.test(c), false, '不能留 /plugins 死链')
+  assert.equal(/dshc-update-btn|copyGuide|updateGuide|top\.copied/.test(c), false, '横幅只做提示，不要跳转/复制/更新动作')
+  // 横幅只有一行文案 + 关闭按钮；剪贴板在别处（复制 uid）合法使用，故仅在函数体内断言
+  const barStart = c.indexOf('function CalendarTopBar(')
+  assert.ok(barStart > 0, '要有 CalendarTopBar')
+  const bar = c.slice(barStart, barStart + 1800)
+  assert.equal(/navigator\.clipboard|clipboard|writeText/.test(bar), false, '横幅不要剪贴板动作')
+  assert.equal(/href:/.test(bar), false, '横幅不要外链/跳转')
+  assert.match(c, /\.dshc-star\{font-size:inherit/, 'Star 链接字号要跟随副标题')
+  // 先填账号密码再自动发现 URL，字段顺序必须与流程一致
+  assert.match(c, /icloud: \["username", "password", "caldavUrl", "proxyUrl"\]/, 'iCloud 字段顺序：账号/密码在前，URL 在后')
+  // 其余服务商顺序原样保留
+  assert.match(c, /google: \["calendarId", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl"\]/, 'google 字段顺序不应被改动')
+  assert.match(c, /nextcloud: \["host", "user", "username", "calendar", "password", "proxyUrl"\]/, 'nextcloud 字段顺序不应被改动')
+  assert.match(c, /custom: \["caldavUrl", "username", "password", "proxyUrl"\]/, 'custom 字段顺序不应被改动')
 })

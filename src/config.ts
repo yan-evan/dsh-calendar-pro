@@ -11,7 +11,7 @@ export type CalendarAuthMethod = 'basic' | 'oauth'
 /**
  * 数据源：本地日历（插件自己存）或远程 CalDAV。
  *
- * 两者**互斥**，任何时刻只有一个生效；`undefined` 是合法且重要的第三种状态 ——
+ * 两者互斥，任何时刻只有一个生效；`undefined` 是合法且重要的第三种状态 ——
  * 「用户还没选」，此时面板显示首启页，不产生任何数据源。
  */
 export type BackendKind = 'local' | 'caldav'

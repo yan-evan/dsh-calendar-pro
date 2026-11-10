@@ -16,7 +16,10 @@ const parts = existsSync(directory) ? readdirSync(directory).filter(name => name
 const holidayFile = join(root, 'templates/data/holidays.json')
 const holidays = existsSync(holidayFile) ? JSON.parse(readFileSync(holidayFile, 'utf8')) : { schema: 1, years: {}, sources: [] }
 if (!holidays.years || Object.keys(holidays.years).length === 0) throw new Error('templates/data/holidays.json is missing or has no years')
-const injected = 'const CALENDAR_HOLIDAYS = ' + JSON.stringify(holidays) + ';\n' + parts
+// 当前包版本随构建注入，前端据此判断 npm 上是否有更新；改 package.json 版本必须重跑 build。
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const injected = 'const CALENDAR_HOLIDAYS = ' + JSON.stringify(holidays) + ';\n' +
+  'const CALENDAR_VERSION = ' + JSON.stringify(version) + ';\n' + parts
 const marker = 'const W = createWorkbenchUI(React);'
 if (!client.includes(marker)) throw new Error('Workbench source marker missing')
 client = client.replace(marker, marker + '\n' + injected)

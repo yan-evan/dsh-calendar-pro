@@ -623,11 +623,11 @@ test('经期预测：日、周两种网格视图在预计经期的日期下画�
     const tips = [...month.container.querySelectorAll('.dshc-period-tip')];
     assert.deepEqual(tips.map(node => node.textContent),
       ['预计经期第 1 天', '预计经期第 2 天', '预计经期第 3 天', '预计经期第 4 天', '预计经期第 5 天']);
-    // 横线必须在日号那一组里：绝对定位的元素一旦跑到日号行外面就会压住农历（用户抓到过重叠）。
+    // 横线必须在日号那一组里：绝对定位的元素跑到日号行外会压住农历。
     assert.notEqual(monthMarks[0].closest('.dshc-daylead'), null, '月视图的线要挂在日号行内');
     assert.equal(week.container.querySelectorAll('.dshc-period-mark').length, 4, '本周覆盖 17–20 四天');
     assert.notEqual(week.container.querySelector('.dshc-dayhead .dshc-period-mark'), null, '周视图的线要在表头里');
-    // 议程视图是「接下来要干什么」的列表，用户明确要求这里不要出现经期横线。
+    // 议程视图不画经期横线（横线仅出现在月 / 周的日期网格）。
     assert.equal(agenda.container.querySelectorAll('.dshc-period-mark').length, 0, '议程视图不画线');
   } finally {
     for (const node of [month, week, agenda]) await react.act(async () => { node.root.unmount(); });
@@ -960,4 +960,53 @@ test('空闲时段面板与日历视图互斥：打开面板时不渲染月/周/
     assert.equal(container.querySelector('.dshc-week'), null, '不该渲染周视图');
     assert.equal(container.querySelector('.dshc-agenda'), null, '不该渲染议程视图');
   } finally { await react.act(async () => root.unmount()); }
+});
+
+test('主页顶部条：侧栏有 Star 外链，浮层不渲染', async () => {
+  const { react, reactDomClient, components } = await setup();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, value: { latest: '0.1.0' } }) });
+  try {
+    const side = await render(react, reactDomClient, react.createElement(components.CalendarPanel, {}));
+    try {
+      const star = side.container.querySelector('a.dshc-star');
+      assert.ok(star, '侧栏主页要有 Star 外链');
+      assert.equal(star.getAttribute('href'), 'https://github.com/yan-evan/dsh-calendar-pro');
+      assert.ok((star.getAttribute('rel') || '').includes('noreferrer'), '外链要带 noreferrer');
+      assert.equal(side.container.querySelector('.dshc-update'), null, '同版本不该显示更新横幅');
+      assert.equal(side.container.querySelector('.dshc-topline'), null, '平时顶部条完全不占行');
+    } finally { await react.act(async () => { side.root.unmount(); }); }
+
+    const float = await render(react, reactDomClient, react.createElement(components.CalendarPanel, { compact: true }));
+    try {
+      assert.equal(float.container.querySelector('.dshc-topline'), null, '浮层不渲染顶部条');
+    } finally { await react.act(async () => { float.root.unmount(); }); }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('更新横幅：只显示文案，无跳转/复制/更新动作', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  const d = new Date();
+  const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const key = 'dsh-calendar-pro:update-check';
+  win.localStorage.setItem(key, JSON.stringify({ date: today, latest: '9.9.9', dismissed: false }));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, value: {} }) });
+  try {
+    const { container, root } = await render(react, reactDomClient, react.createElement(components.CalendarPanel, {}));
+    try {
+      const banner = container.querySelector('.dshc-update');
+      assert.ok(banner, '当天假缓存应触发更新横幅');
+      assert.ok(/9\.9\.9/.test(banner.textContent), '要显示新版本号');
+      // 当前版本号由构建注入，跟 package.json 对齐即可
+      const currentVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+      assert.ok(banner.textContent.includes(currentVersion), '要显示当前版本号 ' + currentVersion);
+      assert.equal(banner.querySelector('a[href="/plugins"]'), null, '不能留无效跳转');
+      assert.equal(banner.querySelector('.dshc-update-btn'), null, '不能有复制/更新按钮');
+      assert.equal(banner.querySelectorAll('button').length, 1, '只保留一个关闭按钮');
+    } finally { await react.act(async () => { root.unmount(); }); }
+  } finally {
+    globalThis.fetch = originalFetch;
+    win.localStorage.removeItem(key);
+  }
 });

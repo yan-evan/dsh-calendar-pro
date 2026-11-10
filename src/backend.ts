@@ -2,7 +2,7 @@
  * 日历后端：本地日历与远程 CalDAV 共用的一面。
  *
  * 业务层（工具、面板路由、导入）只依赖这个接口，不关心数据存在哪；
- * 两者**互斥**，由 config.backend 决定，任何时刻只有一个生效。
+ * 两者互斥，由 config.backend 决定，任何时刻只有一个生效。
  */
 import type { AvailabilityInput, AvailabilityResult } from './availability.js'
 import { CalendarService } from './caldav.js'
