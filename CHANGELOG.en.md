@@ -9,6 +9,12 @@ All notable changes to this project are recorded in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-10
+
+### Fixed
+
+- Installing or upgrading the plugin while DSH is running could fail activation due to dependencies being mid-write. The CalDAV component is now loaded on first use, so activation and the local calendar no longer depend on it
+
 ## [0.1.1] - 2026-11-10
 
 ### Added

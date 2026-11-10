@@ -5,13 +5,14 @@
  * @module dsh-calendar-pro/caldav
  */
 
-import { createDAVClient } from 'tsdav'
+import type { createDAVClient } from 'tsdav'
 import { createHash } from 'node:crypto'
 import ICAL from 'ical.js'
 import { availabilityRequest, findAvailableTimes, type AvailabilityInput, type AvailabilityResult } from './availability.js'
 import { busyResource } from './availability-ical.js'
 import { createProxyFetch } from './proxy-fetch.js'
 import { createOAuthFetch, OAuthError } from './oauth.js'
+import { loadTsdav } from './tsdav-lazy.js'
 import type { ResolvedConfig } from './config.js'
 import {
   buildICalString,
@@ -217,14 +218,14 @@ export class CalendarService {
     if (this.clientPromise === undefined) {
       const transport = this.config.proxyUrl !== '' ? createProxyFetch(this.config.proxyUrl) : globalThis.fetch
       const oauth = this.config.oauth
-      this.clientPromise = createDAVClient({
+      this.clientPromise = loadTsdav().then(({ createDAVClient }) => createDAVClient({
         serverUrl: this.config.caldavUrl,
         credentials: oauth === undefined ? { username: this.config.username, password: this.config.password } : {},
         // createDAVClient 的 Oauth 分支只在初始化时取头；改由 fetch 在每次请求时检查过期。
         authMethod: oauth === undefined ? 'Basic' : 'Custom',
         ...(oauth === undefined ? {} : { authFunction: async () => ({}) }),
         fetch: oauth === undefined ? transport : createOAuthFetch(oauth, transport, this.config.caldavUrl),
-      })
+      }))
     }
     // 创建失败时清掉缓存，让下一次工具调用有机会重试，而不是永久复用 rejected promise。
     return this.clientPromise.catch((error: unknown) => {

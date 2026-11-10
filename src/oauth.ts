@@ -1,6 +1,7 @@
 /** 请求时刷新 OAuth 头；不把 Bearer token 固定到长期缓存的 DAV 客户端。 */
-import { getOauthHeaders, type DAVCredentials } from 'tsdav'
+import type { DAVCredentials } from 'tsdav'
 import type { CalendarOAuthCredentials } from './config.js'
+import { loadTsdav } from './tsdav-lazy.js'
 
 export class OAuthError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -88,6 +89,7 @@ export function createOAuthFetch(config: CalendarOAuthCredentials, transport: ty
     if ((snapshot.expiration ?? 0) <= Date.now() + 30_000) snapshot.expiration = 0
     let headers: Record<string, string>
     try {
+      const { getOauthHeaders } = await loadTsdav()
       const result = await getOauthHeaders(snapshot, { signal }, tokenFetch)
       signal?.throwIfAborted()
       if (!result.headers.authorization) throw new OAuthError('OAuth 未取得访问令牌；请重新授权。')

@@ -422,3 +422,30 @@ test('主页顶部条：Star 外链 + 每日一次只读更新提醒', () => {
   assert.match(c, /nextcloud: \["host", "user", "username", "calendar", "password", "proxyUrl"\]/, 'nextcloud 字段顺序不应被改动')
   assert.match(c, /custom: \["caldavUrl", "username", "password", "proxyUrl"\]/, 'custom 字段顺序不应被改动')
 })
+
+test('tsdav 必须懒加载：激活链不得静态依赖 CalDAV 包', async () => {
+  // 宿主在运行中装/升级插件时，node_modules 重写瞬间模块图可能是半成品，
+  // 静态 import 会让整个插件「启用失败」且被进程缓存。tsdav 只许动态 import。
+  for (const file of ['src/caldav.ts', 'src/oauth.ts']) {
+    const source = read(file)
+    assert.equal(/^import \{[^}]*\} from 'tsdav'/m.test(source), false, file + ' 不得静态导入 tsdav 运行时（import type 可以）')
+  }
+  assert.match(read('src/tsdav-lazy.ts'), /import\('tsdav'\)/, '懒加载器要在')
+  // 构建产物同样只允许动态引用
+  const index = read('lib/index.js')
+  assert.equal(/from 'tsdav'|require\('tsdav'\)/.test(index), false, 'lib/index.js 激活链不得静态引用 tsdav')
+  // 实测：在子进程里用解析钩子把 tsdav 拦下（等价于依赖残缺），入口仍要能导入。
+  // 独立进程，不碰磁盘、不影响并行的其他测试文件。
+  const { spawnSync } = await import('node:child_process')
+  const entry = new URL('../lib/index.js', import.meta.url).href
+  const probe = "import { registerHooks } from 'node:module';" +
+    "registerHooks({ resolve(specifier, context, nextResolve) {" +
+    "  if (specifier === 'tsdav') return { url: 'node:blocked', shortCircuit: true };" +
+    "  return nextResolve(specifier, context)" +
+    "} });" +
+    "import(" + JSON.stringify(entry) + ").then((m) => {" +
+    "  process.exit(typeof m.apply === 'function' ? 0 : 1)" +
+    "}).catch((e) => { console.error(e && e.message); process.exit(2) })"
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], { encoding: 'utf8' })
+  assert.equal(result.status, 0, 'tsdav 缺失时插件入口仍要能导入，实际：' + result.stderr.trim())
+})
