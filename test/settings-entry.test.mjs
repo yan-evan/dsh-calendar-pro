@@ -449,3 +449,55 @@ test('tsdav 必须懒加载：激活链不得静态依赖 CalDAV 包', async () 
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], { encoding: 'utf8' })
   assert.equal(result.status, 0, 'tsdav 缺失时插件入口仍要能导入，实际：' + result.stderr.trim())
 })
+
+/**
+ * 切出一个回调体：从 onSaved: (value) => { 到配对的收尾大括号。
+ * 比正则稳：回调里嵌套多少层花括号都能配平。
+ */
+function onSavedBodyOf(source) {
+  const start = source.indexOf('onSaved: (value) => {')
+  assert.notEqual(start, -1, '找不到 onSaved 回调')
+  let depth = 0
+  for (let i = start + 'onSaved: (value) => {'.length - 1; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    else if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, i + 1)
+    }
+  }
+  assert.fail('onSaved 回调的花括号没配平')
+}
+
+test('保存连接的回调里不能有没定义的 setter：一句幽灵调用就能让保存成功却不刷新', () => {
+  // 曾经 onSaved 里混着一句 setDemo(false)，而 demo 这个 state 早被重构删掉了。
+  // 运行到那行就抛 ReferenceError，后面的 reload() 根本没机会执行 ——
+  // 表现是「配置保存成功，页面纹丝不动」，只能靠用户手动刷新。
+  for (const file of ['templates/client.js', 'lib/client.js']) {
+    const source = read(file)
+    const panel = bodyOf(source, 'CalendarPanel')
+    const onSaved = onSavedBodyOf(source)
+    const declared = new Set([...panel.matchAll(/const\s+\[([^\]]+)\]\s*=\s*useState/g)]
+      .flatMap((m) => m[1].split(',').map((name) => name.trim().split(':')[0].trim())))
+    for (const match of onSaved.matchAll(/\b(set[A-Z][A-Za-z0-9_]*)\s*\(/g)) {
+      const setter = match[1]
+      assert.equal(declared.has(setter), true,
+        file + '：onSaved 里调用了 ' + setter + '()，但 CalendarPanel 没有对应的 useState —— ' +
+        '这会让回调在这里抛错，后面的刷新全都不执行')
+    }
+  }
+})
+
+test('保存连接后要让所有日历面板一起刷新：缓存失效 + 当前实例重拉', () => {
+  for (const file of ['templates/client.js', 'lib/client.js']) {
+    const source = read(file)
+    const onSaved = onSavedBodyOf(source)
+    // 数据源换了，模块级缓存里的旧事件必须作废，否则别的面板继续显示旧数据。
+    assert.match(onSaved, /invalidateCalendarData\(\)/, file + '：保存连接后要作废日历缓存')
+    // 当前实例立即重拉，不必等 60s TTL 过期或用户手动刷新。
+    assert.match(onSaved, /reload\(\)/, file + '：保存连接后要立刻重拉一次')
+    // 广播：别的组件树（主页 / 悬浮面板 / 设置页）也收到通知，跟着刷新。
+    const panel = bodyOf(source, 'CalendarPanel')
+    assert.match(panel, /subscribeDataRefresh\(reload\)/, file + '：日历面板要订阅数据失效广播')
+    assert.match(source, /function invalidateCalendarData\(\)\s*\{[\s\S]{0,200}?DATA_LISTENERS/, file + '：invalidateCalendarData 要广播给所有已挂载实例')
+  }
+})

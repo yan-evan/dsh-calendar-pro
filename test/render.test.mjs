@@ -1010,3 +1010,63 @@ test('更新横幅：只显示文案，无跳转/复制/更新动作', async () 
     win.localStorage.removeItem(key);
   }
 });
+
+test('连接保存后视图自动刷新：引导页直接变成日历，不用手动刷新', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  let connected = false;
+  const originalFetch = globalThis.fetch;
+  const jsonResponse = (value) => ({ ok: true, status: 200, json: async () => value });
+  const remoteConnection = { backend: 'caldav', configured: true, provider: 'icloud', username: 'a@icloud.com' };
+  const calls = [];
+  // 事件落在「今天」：写死日期的样本过几个月就落到视图窗口外，
+  // 月视图自然画不出它 —— 那是样本过期，不是渲染坏了，断言却会一直红。
+  const today = new Date();
+  const startAt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10, 0, 0);
+  const endAt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 11, 0, 0);
+  const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const remoteEvent = { uid: 'remote-1', summary: '远程日程', start: iso(startAt), end: iso(endAt), allDay: false };
+  const fetchState = async (url, init) => {
+    const body = init && init.body ? JSON.parse(String(init.body)) : null;
+    const action = body && body.action;
+    calls.push(action);
+    if (action === 'saveConnection') { connected = true; return jsonResponse({ ok: true, value: { saved: true, connection: remoteConnection } }); }
+    if (action === 'connection') return jsonResponse({ ok: true, value: connected ? remoteConnection : { backend: null, configured: false } });
+    if (action === 'list') return jsonResponse({ ok: true, value: { count: 1, start: '', end: '', events: [remoteEvent] } });
+    return jsonResponse({ ok: true, value: {} });
+  };
+  globalThis.fetch = fetchState;
+  win.fetch = fetchState;
+  try {
+    const { container, root } = await render(react, reactDomClient, react.createElement(components.CalendarPanel, {}));
+    try {
+      // 首启：还没选数据源 → 显示二选一引导页
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assert.ok(container.querySelector('.dshc-start'), '未配置时应显示引导页');
+      // 点「连接远程日历」打开连接对话框
+      const openButton = [...container.querySelectorAll('.dshc-start-card')].find(node => node.textContent.includes('连接远程日历'));
+      assert.ok(openButton, '要有「连接远程日历」入口');
+      await react.act(async () => { openButton.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); });
+      // 选 iCloud，填账号，点「保存并启用」
+      const select = win.document.querySelector('select');
+      await react.act(async () => { select.value = 'icloud'; select.dispatchEvent(new win.Event('change', { bubbles: true })); });
+      const userInput = [...win.document.querySelectorAll('input')].find(node => node.placeholder !== undefined || true);
+      await react.act(async () => {
+        userInput.value = 'a@icloud.com';
+        userInput.dispatchEvent(new win.Event('input', { bubbles: true }));
+      });
+      const saveButton = [...win.document.querySelectorAll('button')].find(node => node.textContent === '保存并启用');
+      assert.ok(saveButton, '保存按钮要在（provider 已选）');
+      assert.equal(saveButton.disabled, false, 'provider 选好后保存不该是禁用态');
+      await react.act(async () => { saveButton.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      // 保存成功后：引导页消失，月视图出现，远程日程画上来了
+      assert.equal(container.querySelector('.dshc-start'), null, '保存后引导页应消失');
+      assert.ok(container.querySelector('.dshc-grid'), '保存后应直接显示日历视图');
+      assert.ok(container.textContent.includes('远程日程'), '远程日程要出现在页面上');
+      // 保存后必须重新取一次数据：光换视图不算刷新。
+      // 这条锁的是「onSaved 里任何一处抛错都会让 reload() 不执行」——
+      // 曾经有个不存在的 setDemo 混在回调里，保存成功但界面毫无反应。
+      assert.ok(calls.filter(action => action === 'list').length >= 2, '保存后要重新拉一次日历数据（实际 list 次数：' + calls.filter(action => action === 'list').length + '）');
+    } finally { await react.act(async () => { root.unmount(); }); }
+  } finally { globalThis.fetch = originalFetch; }
+});
