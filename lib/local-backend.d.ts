@@ -20,6 +20,7 @@ export declare class LocalBackend {
     list(startIso: string, endIso: string, options?: {
         expand?: boolean;
         maxOccurrences?: number;
+        onTruncated?: (truncated: boolean) => void;
     }, signal?: AbortSignal): Promise<CalendarEvent[]>;
     all(signal?: AbortSignal, timeRange?: {
         start: string;
@@ -32,8 +33,8 @@ export declare class LocalBackend {
     /** 原始 iCalendar 文本：迁移原样搬运，保留 ATTENDEE / EXDATE 等未建模字段。 */
     raw(uid: string, signal?: AbortSignal): Promise<string>;
     get(uid: string, signal?: AbortSignal): Promise<CalendarEvent>;
-    update(uid: string, changes: Partial<EventFields>, signal?: AbortSignal, _scope?: 'series'): Promise<CalendarEvent>;
-    delete(uid: string, signal?: AbortSignal, _scope?: 'series'): Promise<{
+    update(uid: string, changes: Partial<EventFields>, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent>;
+    delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{
         uid: string;
         href: string;
     }>;

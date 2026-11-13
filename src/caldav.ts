@@ -278,7 +278,7 @@ export class CalendarService {
   async list(
     startIso: string,
     endIso: string,
-    options?: { expand?: boolean; maxOccurrences?: number },
+    options?: { expand?: boolean; maxOccurrences?: number; onTruncated?: (truncated: boolean) => void },
     signal?: AbortSignal,
   ): Promise<CalendarEvent[]> {
     const expand = options?.expand !== false
@@ -288,7 +288,7 @@ export class CalendarService {
       const objects = await this.readObjects({ start: startIso, end: endIso }, signal)
       signal?.throwIfAborted()
       return expand
-        ? this.toExpandedEvents(objects, startIso, endIso, maxOccurrences)
+        ? this.toExpandedEvents(objects, startIso, endIso, maxOccurrences, options?.onTruncated)
         : this.toEvents(objects)
     } catch (error) {
       signal?.throwIfAborted()
@@ -347,8 +347,10 @@ export class CalendarService {
     startIso: string,
     endIso: string,
     maxOccurrences: number,
+    onTruncated?: (truncated: boolean) => void,
   ): CalendarEvent[] {
     const events: CalendarEvent[] = []
+    let truncated = false
     for (const object of objects) {
       events.push(...expandEventFromICal(
         String(object.data ?? ''),
@@ -357,8 +359,10 @@ export class CalendarService {
         startIso,
         endIso,
         maxOccurrences,
+        { onTruncated: (value) => { if (value) truncated = true } },
       ))
     }
+    onTruncated?.(truncated)
     return events
   }
 

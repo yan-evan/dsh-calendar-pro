@@ -37,7 +37,7 @@ test('browser bundle activates and registers native main, sidebar and settings',
   assert.equal(settings.meta.id,pkg.name)
 })
 
-test('检查更新 / 自动更新已整体移除，构建链不再经过上游包装脚本', () => {
+test('上游的检查更新 / 自动更新组件已整体移除，构建链不再经过上游包装脚本', () => {
   const pkg = JSON.parse(read('package.json'))
   const client = read('lib/client.js')
   const node = read('src/index.ts')

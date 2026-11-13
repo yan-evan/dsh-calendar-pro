@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%5E22.19%20%7C%20%3E24-green.svg" alt="Node" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%5E22.19.0%20%7C%7C%20%3E%3D24.0.0-green.svg" alt="Node" /></a>
   <a href="https://github.com/deepseek-ai"><img src="https://img.shields.io/badge/DSH-%3E%3D0.2.1--rc.3-purple.svg" alt="DSH" /></a>
 </p>
 

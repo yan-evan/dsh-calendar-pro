@@ -11,7 +11,7 @@ export interface AvailabilityResult {
   start: string; end: string; timeZone: string; durationMinutes: number; workStart: string; workEnd: string
   weekdays: number[]; bufferMinutes: number; stepMinutes: number; checkedAt: string
   busyEventCount: number; count: number; hasMore: boolean; slots: Array<{ start: string; end: string }>
-  scope: 'connected-calendar'; complete: true
+  scope: 'connected-calendar'; complete: boolean
 }
 export function availabilityRequest(input: AvailabilityInput) {
   for (const key of ['start', 'end'] as const) {
@@ -46,8 +46,11 @@ export function availabilityRequest(input: AvailabilityInput) {
     stepMinutes: integer(input.stepMinutes, 15, 1, 60, '候选间隔分钟'), limit: integer(input.limit, 20, 1, 100, '候选数量') }
 }
 
-/** Only use with a complete, expanded collection; titles never leave this calculation. */
-export function findAvailableTimes(events: CalendarEvent[], input: AvailabilityInput): AvailabilityResult {
+/**
+ * 只用完整展开的事件集合计算空闲；日程标题不进入计算结果。
+ * @param complete - 事件集合是否完整；false 表示集合被截断，结果只反映已知的部分。
+ */
+export function findAvailableTimes(events: CalendarEvent[], input: AvailabilityInput, complete = true): AvailabilityResult {
   const request = availabilityRequest(input), { formatter, startMs, endMs, durationMinutes, bufferMinutes, weekdays, workStart, workEnd } = request
   if (events.length > 10000) throw new Error('日程实例超过 10000 条，请缩小查询范围；未给出空闲建议')
   const timed: Array<[number, number]> = [], allDay: Array<[string, string]> = []
@@ -82,7 +85,11 @@ export function findAvailableTimes(events: CalendarEvent[], input: AvailabilityI
   const slots: Array<{ start: string; end: string }> = []; let intervalIndex = 0
   for (let i = 0; i + durationMinutes <= minutes; i++) {
     const p = local[i]
-    if (p.minute % request.stepMinutes || p.date !== local[i + durationMinutes].date || blocked[i + durationMinutes] !== blocked[i]) continue
+    // 候选须落在同一本地日，且本地墙钟跨度为正：回拨日同一钟点会出现两次，
+    // 墙钟不前进的区间对应「01:00 到 01:00」这类零长度候选，一律跳过。
+    if (p.minute % request.stepMinutes || p.date !== local[i + durationMinutes].date
+      || local[i + durationMinutes].minute <= p.minute
+      || blocked[i + durationMinutes] !== blocked[i]) continue
     const a = first + i * MINUTE, b = a + durationMinutes * MINUTE
     while (intervalIndex < merged.length && merged[intervalIndex][1] <= a) intervalIndex++
     if (intervalIndex < merged.length && merged[intervalIndex][0] < b) { i = Math.max(i, Math.ceil((merged[intervalIndex][1] - first) / MINUTE) - 1); continue }
@@ -91,5 +98,5 @@ export function findAvailableTimes(events: CalendarEvent[], input: AvailabilityI
   }
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), timeZone: request.timeZone, durationMinutes,
     workStart: workStart.text, workEnd: workEnd.text, weekdays, bufferMinutes, stepMinutes: request.stepMinutes, checkedAt: new Date().toISOString(),
-    busyEventCount, count: Math.min(slots.length, request.limit), hasMore: slots.length > request.limit, slots: slots.slice(0, request.limit), scope: 'connected-calendar', complete: true }
+    busyEventCount, count: Math.min(slots.length, request.limit), hasMore: slots.length > request.limit, slots: slots.slice(0, request.limit), scope: 'connected-calendar', complete }
 }

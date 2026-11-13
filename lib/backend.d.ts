@@ -13,6 +13,7 @@ export interface CalendarBackend {
     list(startIso: string, endIso: string, options?: {
         expand?: boolean;
         maxOccurrences?: number;
+        onTruncated?: (truncated: boolean) => void;
     }, signal?: AbortSignal): Promise<CalendarEvent[]>;
     /** 全量（或窗口内）事件，不展开重复；供迁移、去重与客户端过滤使用。 */
     all(signal?: AbortSignal, timeRange?: {

@@ -530,6 +530,11 @@ export class CalendarSettingsBackend {
       if (action === 'migratePlan') return { plan, summary: describePlan(plan) }
       const result = await runMigration(fromBackend, toBackend, plan, { limit: clampInt(body.limit, 200, 1, 500) }, signal)
       // 搬完才切数据源：中途失败时用户仍留在原来的源上，数据不会「以为回来了其实没回来」。
+      // 判据与 switchBackend 一致：有失败就不切源。
+      if (result.failed.length > 0) {
+        throw new Error('迁移已中止：' + result.failed.length + ' 条复制失败，当前仍使用' +
+          (current === 'local' ? '本地日历' : '远程日历') + '。请检查连接后重试。')
+      }
       if (result.migrated > 0) await this.commitBackend(target)
       return { plan, result, summary: describePlan(plan), backend: target, connection: this.connection() }
     }

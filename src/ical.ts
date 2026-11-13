@@ -91,6 +91,39 @@ function isDateOnly(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+/** 全天事件的默认结束日：DTSTART + 1 天（RFC 5545 §3.6.1）。跨月、跨年、闰日都按日历推进。 */
+function nextDayDate(time: ICAL.Time): string {
+  const next = time.clone()
+  next.day += 1
+  return pad(next.year) + '-' + pad(next.month) + '-' + pad(next.day)
+}
+
+/**
+ * 统一 DTSTART / DTEND 的 VALUE 类型（RFC 5545 §3.6.1 要求两者一致）。
+ * 全天事件用 DATE，定时事件用 DATE-TIME；不一致的 VEVENT 会被服务器拒绝。
+ */
+function harmonizeTimePair(start: ICAL.Time, end: ICAL.Time): { start: ICAL.Time; end: ICAL.Time } {
+  if (start.isDate && !end.isDate) {
+    // 开始是全天、结束是具体时间：结束按当天零点取，与开始同为 DATE。
+    const endDate = end.clone()
+    endDate.isDate = true
+    endDate.hour = 0
+    endDate.minute = 0
+    endDate.second = 0
+    return { start, end: endDate }
+  }
+  if (!start.isDate && end.isDate) {
+    // 开始是具体时间、结束是全天日期：结束取当天最后一刻，与开始同为 DATE-TIME。
+    const endDate = end.clone()
+    endDate.isDate = false
+    endDate.hour = 23
+    endDate.minute = 59
+    endDate.second = 59
+    return { start, end: endDate }
+  }
+  return { start, end }
+}
+
 /** 把任意 hydrated 值安全转成字符串。 */
 function asString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined
@@ -120,12 +153,16 @@ function timePropertyValue(vevent: ICAL.Component, name: string): ICAL.Time | un
   return value instanceof ICAL.Time ? value : undefined
 }
 
-/** 计算事件时长：优先 DTEND，其次 DURATION；两者皆无返回 null（时长视为 0）。 */
+/**
+ * 计算事件时长：优先 DTEND，其次 DURATION；两者皆无时按 RFC 5545 §3.6.1 推断 ——
+ * 全天事件默认占 1 天，定时事件时长为 0。
+ */
 function veventDuration(vevent: ICAL.Component, dtstart: ICAL.Time): ICAL.Duration | null {
   const dtend = timePropertyValue(vevent, 'dtend')
   if (dtend !== undefined) return dtend.subtractDate(dtstart)
   const duration = vevent.getFirstPropertyValue('duration')
-  return duration instanceof ICAL.Duration ? duration : null
+  if (duration instanceof ICAL.Duration) return duration
+  return dtstart.isDate === true ? ICAL.Duration.fromData({ days: 1 }) : null
 }
 
 /**
@@ -174,7 +211,8 @@ function veventToEvent(vevent: ICAL.Component, href: string, etag?: string): Cal
     endTime.addDuration(duration)
     end = icalTimeToIso(endTime)
   }
-  if (end === undefined) end = start
+  // 全天事件缺 DTEND/DURATION 时结束日为次日（RFC 5545 §3.6.1）。
+  if (end === undefined) end = allDay ? nextDayDate(dtstart) : start
 
   const rruleValue = vevent.getFirstPropertyValue('rrule')
   const rrule = rruleValue instanceof ICAL.Recur ? rruleValue.toString() : undefined
@@ -291,6 +329,8 @@ function buildOverrideEvent(base: CalendarEvent, vevent: ICAL.Component): Calend
  * @param rangeStart - 查询窗口起始（ISO 8601）。
  * @param rangeEnd - 查询窗口结束（ISO 8601）。
  * @param maxOccurrences - 每个事件最多展开的实例数（防死循环）。
+ * @param options - strict 要求完整展开（不完整即报错）；overlap 按重叠判定；
+ *   onTruncated 在实例数被 maxOccurrences 截断时回调，告知结果不完整。
  * @throws {ExpansionLimitError} 迭代次数超出预算仍未能到达查询窗口时抛出。
  */
 export function expandEventFromICal(
@@ -300,7 +340,7 @@ export function expandEventFromICal(
   rangeStart: string,
   rangeEnd: string,
   maxOccurrences: number,
-  options: { strict?: boolean; overlap?: boolean; deadline?: number } = {},
+  options: { strict?: boolean; overlap?: boolean; deadline?: number; onTruncated?: (truncated: boolean) => void } = {},
 ): CalendarEvent[] {
   let vcal: ICAL.Component
   try {
@@ -314,7 +354,6 @@ export function expandEventFromICal(
   if (master === null) { if (options.strict) throw new ExpansionLimitError('日历资源缺少主日程，未给出空闲建议'); return [] }
   const base = veventToEvent(master, href, etag)
   if (base === null) { if (options.strict) throw new ExpansionLimitError('日程缺少开始时间，未给出空闲建议'); return [] }
-  if (options.strict && base.allDay && base.end === base.start) base.end = new Date(Date.parse(base.start) + 86400000).toISOString().slice(0, 10)
   if (options.strict && Date.parse(base.end) < Date.parse(base.start)) throw new ExpansionLimitError('日程结束早于开始，未给出空闲建议')
 
   // 收集 RECURRENCE-ID -> 覆盖 VEVENT，展开时按原实例时间替换。
@@ -336,11 +375,11 @@ export function expandEventFromICal(
   const rangeStartMs = isoToEpochMs(rangeStart)
   const rangeEndMs = isoToEpochMs(rangeEnd)
   const inRange = (event: CalendarEvent): boolean => {
-    if (options.strict && event.allDay && event.end === event.start) event.end = new Date(Date.parse(event.start) + 86400000).toISOString().slice(0, 10)
     if (options.strict && Date.parse(event.end) < Date.parse(event.start)) throw new ExpansionLimitError('重复例外结束早于开始，未给出空闲建议')
     const startMs = isoToEpochMs(event.start)
+    // 统一为半开区间 [start, end)：窗口末尾这一刻开始的实例不算在窗口内。
     if (options.overlap) return startMs < rangeEndMs && isoToEpochMs(event.end) > rangeStartMs
-    return !Number.isNaN(startMs) && startMs >= rangeStartMs && startMs <= rangeEndMs
+    return !Number.isNaN(startMs) && startMs >= rangeStartMs && startMs < rangeEndMs
   }
 
   const duration = veventDuration(master, dtstart) ?? (options.strict && base.allDay ? ICAL.Duration.fromData({ days: 1 }) : null)
@@ -349,6 +388,8 @@ export function expandEventFromICal(
   const consumedOverrides = new Set<string>()
   const totalIterationCap = options.strict ? 100000 : Math.max(100000, maxOccurrences * 1000)
   let budgetExhausted = false
+  /** 是否因为达到 maxOccurrences 上限而提前收尾（结果不完整）。 */
+  let truncated = false
 
   try {
     let iterations = 0
@@ -363,7 +404,8 @@ export function expandEventFromICal(
       const next = expansion.next() as ICAL.Time | null | undefined
       if (next === null || next === undefined) break
       const occMs = next.toUnixTime() * 1000
-      if (occMs > rangeEndMs) break
+      // 半开区间 [start, end)：恰好等于窗口末尾的实例不在窗口内，可以停止迭代。
+      if (occMs >= rangeEndMs) break
       const key = recurrenceKey(next)
       const overrideVevent = overrides.get(key)
       if (overrideVevent !== undefined) {
@@ -377,9 +419,15 @@ export function expandEventFromICal(
       const occurrence = buildOccurrence(base, next, duration)
       if (inRange(occurrence)) occurrences.push(occurrence)
     }
+    // 非 strict 路径靠 maxOccurrences 收尾：达到上限说明后面的实例没算，结果不完整。
+    if (!options.strict && occurrences.length >= maxOccurrences) {
+      const probe = expansion.next() as ICAL.Time | null | undefined
+      if (probe !== null && probe !== undefined) truncated = true
+    }
   } catch (error) {
     if (options.strict) throw error instanceof ExpansionLimitError ? error : new ExpansionLimitError('重复规则无法完整展开，未给出空闲建议')
     // 规则无法满足或迭代异常时，返回已成功展开的部分实例。
+    truncated = true
   }
 
   if (budgetExhausted) {
@@ -395,9 +443,12 @@ export function expandEventFromICal(
     if (consumedOverrides.has(key)) continue
     const overrideEvent = buildOverrideEvent(base, overrideVevent)
     if (overrideEvent === null || !inRange(overrideEvent)) continue
-    if (occurrences.length >= maxOccurrences) { if (options.strict) throw new ExpansionLimitError('重复日程例外过多，请缩小空闲查询范围'); break }
+    if (occurrences.length >= maxOccurrences) { if (options.strict) throw new ExpansionLimitError('重复日程例外过多，请缩小空闲查询范围'); truncated = true; break }
     occurrences.push(overrideEvent)
   }
+
+  // 非 strict 路径被上限截断时，明确告诉调用方「结果不完整」。
+  options.onTruncated?.(truncated)
 
   return occurrences
 }
@@ -418,11 +469,16 @@ export function buildICalString(fields: EventFields): string {
   vevent.addPropertyWithValue('dtstamp', ICAL.Time.fromJSDate(new Date(), true))
   vevent.addPropertyWithValue('summary', fields.summary)
 
-  const start = parseTime(fields.start, fields.allDay === true || isDateOnly(fields.start))
-  const end = parseTime(fields.end, fields.allDay === true || isDateOnly(fields.end))
+  let start = parseTime(fields.start, fields.allDay === true || isDateOnly(fields.start))
+  let end = parseTime(fields.end, fields.allDay === true || isDateOnly(fields.end))
+  // 全天事件至少占一天：结束日不早于开始日。
+  if (start.isDate && end.isDate && end.compare(start) <= 0) end = ICAL.Time.fromDateString(nextDayDate(start))
+  const pair = harmonizeTimePair(start, end)
+  start = pair.start
+  end = pair.end
+  if (end.compare(start) < 0) throw new Error('结束时间早于开始时间，请检查 start 与 end')
   vevent.addPropertyWithValue('dtstart', start)
   vevent.addPropertyWithValue('dtend', end)
-
   if (fields.description !== undefined && fields.description !== '') {
     vevent.addPropertyWithValue('description', fields.description)
   }
@@ -492,8 +548,16 @@ function applyEventTimes(vevent: ICAL.Component, changes: Partial<EventFields>):
     end = parseTime(changes.end, allDay || isDateOnly(changes.end))
   } else if (existingEnd !== undefined && changes.allDay !== undefined) {
     end = convertTimeForAllDay(existingEnd, allDay)
+  } else if (changes.start !== undefined && existingEnd !== undefined) {
+    // 只改了开始、没给结束：结束跟随新的开始换表示，保持 VALUE 类型一致。
+    end = convertTimeForAllDay(existingEnd, start?.isDate === true)
   }
   if (end !== undefined) {
+    // 全天事件至少占一天：结束日不早于开始日。
+    const finalStart = start ?? existingStart
+    if (finalStart?.isDate === true && end.isDate === true && end.compare(finalStart) <= 0) {
+      end = ICAL.Time.fromDateString(nextDayDate(finalStart))
+    }
     writeTime('dtend', end)
     // DTEND 与 DURATION 互斥；显式给结束时间时移除原 DURATION，避免双份定义。
     vevent.removeProperty('duration')
@@ -565,6 +629,17 @@ export function updateICalString(data: string, changes: Partial<EventFields>): s
 
   if (changes.start !== undefined || changes.end !== undefined || changes.allDay !== undefined) {
     applyEventTimes(vevent, changes)
+  }
+
+  // 出口校验：DTSTART 与 DTEND 的 VALUE 类型必须一致（RFC 5545 §3.6.1），
+  // 且结束不得早于开始；不满足时整个更新作废，原记录保持不变。
+  const finalStart = timePropertyValue(vevent, 'dtstart')
+  const finalEnd = timePropertyValue(vevent, 'dtend')
+  if (finalStart !== undefined && finalEnd !== undefined && finalStart.isDate !== finalEnd.isDate) {
+    throw new Error('开始与结束必须同时为全天日期或具体时间；请同时提供 start 与 end（或 allDay），现有日程未改动。')
+  }
+  if (finalStart !== undefined && finalEnd !== undefined && finalEnd.compare(finalStart) < 0) {
+    throw new Error('结束时间早于开始时间；请检查 start 与 end，现有日程未改动。')
   }
 
   return vcal.toString()

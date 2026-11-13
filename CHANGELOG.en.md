@@ -9,6 +9,20 @@ All notable changes to this project are recorded in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-11-13
+
+### Fixed
+
+- The self-check falsely reported "no CalDAV account configured" in local calendar mode; it now branches on the active data source
+- A single-day all-day event without DTEND was invisible to queries covering its own day; its end date now defaults to the next day per RFC 5545
+- A migration with failed items still switched the data source; failures now abort the migration and keep the current source
+- Deleting or editing a recurring series in the local calendar needed no confirmation; it now requires `scope="series"` like CalDAV
+- Free/busy candidates on a daylight-saving switch day repeated or missed local hours; they are now filtered by local wall clock
+- Changing only the start time produced a VEVENT whose DTSTART and DTEND value types disagreed; the end now converts along with it and is validated
+- The end of a query window meant different things per path; all paths now use the half-open interval `[start, end)`
+- Recurrence expansion hitting its limit was still presented as a complete result; it now returns `complete=false` and notes the truncation
+- Comments and the README disagreed with the implementation on tool count and supported Node version
+
 ## [0.1.2] - 2026-11-11
 
 ### Fixed

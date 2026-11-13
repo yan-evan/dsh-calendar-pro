@@ -31,7 +31,20 @@ test('全天事件 round-trip：YYYY-MM-DD 与 VALUE=DATE', () => {
   const event = parseEventFromICal(ical, 'x.ics')
   assert.equal(event.allDay, true)
   assert.equal(event.start, '2025-04-01')
-  assert.equal(event.end, '2025-04-01')
+  // 单日全天事件必须占满一天：DTEND 是排他的，同日起止会写出零天事件。
+  assert.equal(event.end, '2025-04-02')
+})
+
+test('全天事件：结束日不早于开始日，跨日区间保持不变', () => {
+  const single = buildICalString({ summary: '生日', start: '2025-04-01', end: '2025-04-01', allDay: true })
+  assert.match(single, /DTEND;VALUE=DATE:20250402/)
+  const multi = buildICalString({ summary: '休假', start: '2025-04-01', end: '2025-04-03', allDay: true })
+  assert.match(multi, /DTSTART;VALUE=DATE:20250401/)
+  assert.match(multi, /DTEND;VALUE=DATE:20250403/)
+  // 带时区的具体时刻 + allDay：也必须落到 DATE 类型，不能写出 VALUE 混用。
+  const timed = buildICalString({ summary: '整天', start: '2026-11-05T09:00:00+08:00', end: '2026-11-05T10:00:00+08:00', allDay: true })
+  assert.match(timed, /DTSTART;VALUE=DATE:20261105/)
+  assert.match(timed, /DTEND;VALUE=DATE:20261106/)
 })
 
 test('解析固定 .ics 文本：RRULE 与 STATUS 原样保留', () => {

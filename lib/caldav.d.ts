@@ -64,6 +64,7 @@ export declare class CalendarService {
     list(startIso: string, endIso: string, options?: {
         expand?: boolean;
         maxOccurrences?: number;
+        onTruncated?: (truncated: boolean) => void;
     }, signal?: AbortSignal): Promise<CalendarEvent[]>;
     /** 列出全部（或 timeRange 窗口内）事件，供客户端过滤用。 */
     all(signal?: AbortSignal, timeRange?: {

@@ -13,6 +13,7 @@ import {
   buildICalString,
   expandEventFromICal,
   generateUid,
+  isRecurringResource,
   parseEventFromICal,
   updateICalString,
   type CalendarEvent,
@@ -89,7 +90,7 @@ export class LocalBackend {
   async list(
     startIso: string,
     endIso: string,
-    options?: { expand?: boolean; maxOccurrences?: number },
+    options?: { expand?: boolean; maxOccurrences?: number; onTruncated?: (truncated: boolean) => void },
     signal?: AbortSignal,
   ): Promise<CalendarEvent[]> {
     signal?.throwIfAborted()
@@ -97,11 +98,14 @@ export class LocalBackend {
     const maxOccurrences = options?.maxOccurrences ?? 30
     const expand = options?.expand !== false
     const out: CalendarEvent[] = []
+    let truncated = false
     for (const [href, record] of Object.entries(file.events)) {
       signal?.throwIfAborted()
       // 与 CalDAV 一侧同一条路径：窗口内展开，避免把「没走到窗口」当成「窗口内没有」。
       const events = expand
-        ? expandEventFromICal(record.ical, href, undefined, startIso, endIso, maxOccurrences)
+        ? expandEventFromICal(record.ical, href, undefined, startIso, endIso, maxOccurrences, {
+            onTruncated: (value) => { if (value) truncated = true },
+          })
         : (() => {
             const event = parseEventFromICal(record.ical, href)
             return event === null ? [] : [event]
@@ -112,6 +116,7 @@ export class LocalBackend {
         if (overlaps(event, startIso, endIso)) out.push(event)
       }
     }
+    options?.onTruncated?.(truncated)
     return out
   }
 
@@ -185,10 +190,14 @@ export class LocalBackend {
     return event
   }
 
-  async update(uid: string, changes: Partial<EventFields>, signal?: AbortSignal, _scope?: 'series'): Promise<CalendarEvent> {
+  async update(uid: string, changes: Partial<EventFields>, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent> {
     signal?.throwIfAborted()
     const file = this.read()
     const record = this.require(file, uid)
+    // 与 CalDAV 侧同一条安全契约：操作整个重复系列前必须显式确认。
+    if (isRecurringResource(record.ical) && scope !== 'series') {
+      throw new Error('这是整个重复系列。请先向用户说明影响，确认后显式传 scope="series"；当前不支持只改某一次。')
+    }
     const next = updateICalString(record.ical, changes)
     if (next === null) throw new Error('这条本地日程无法更新：原内容缺少主日程。')
     file.revision += 1
@@ -199,10 +208,14 @@ export class LocalBackend {
     return event
   }
 
-  async delete(uid: string, signal?: AbortSignal, _scope?: 'series'): Promise<{ uid: string; href: string }> {
+  async delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{ uid: string; href: string }> {
     signal?.throwIfAborted()
     const file = this.read()
-    this.require(file, uid)
+    const record = this.require(file, uid)
+    // 与 CalDAV 侧同一条安全契约：删除整个重复系列前必须显式确认。
+    if (isRecurringResource(record.ical) && scope !== 'series') {
+      throw new Error('这是整个重复系列。请先向用户说明影响，确认后显式传 scope="series"；当前不支持只删某一次。')
+    }
     delete file.events[uid]
     file.revision += 1
     this.write(file, new Date().toISOString())

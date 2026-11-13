@@ -30,7 +30,7 @@ export interface AvailabilityResult {
         end: string;
     }>;
     scope: 'connected-calendar';
-    complete: true;
+    complete: boolean;
 }
 export declare function availabilityRequest(input: AvailabilityInput): {
     startMs: number;
@@ -51,5 +51,8 @@ export declare function availabilityRequest(input: AvailabilityInput): {
     stepMinutes: number;
     limit: number;
 };
-/** Only use with a complete, expanded collection; titles never leave this calculation. */
-export declare function findAvailableTimes(events: CalendarEvent[], input: AvailabilityInput): AvailabilityResult;
+/**
+ * 只用完整展开的事件集合计算空闲；日程标题不进入计算结果。
+ * @param complete - 事件集合是否完整；false 表示集合被截断，结果只反映已知的部分。
+ */
+export declare function findAvailableTimes(events: CalendarEvent[], input: AvailabilityInput, complete?: boolean): AvailabilityResult;

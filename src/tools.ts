@@ -1,5 +1,5 @@
 /**
- * 五个面向模型的日历工具：list / create / update / delete / search。
+ * 七个面向模型的日历工具：list / create / update / delete / search / health / findTime。
  * 直接调用 ctx.tools.register 注册【编译好的 JSON Schema】参数与 canonical 输出。
  *
  * @module dsh-calendar-pro/tools
@@ -153,7 +153,7 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
 
   const list = {
     name: 'calendar_list',
-    description: '列出某时间段内的日历事件（默认未来 7 天）。start/end 为 ISO 8601 时间（含时区偏移，如 2025-01-01T09:00:00+08:00），全天事件返回 YYYY-MM-DD。默认展开重复事件（RRULE）：每个实例作为独立行返回，start/end 为该次发生时间，并带 isOccurrence=true 与 seriesStart（系列原开始时间）；非重复事件保持单行且 isOccurrence=false。expand=false 时重复事件按原始单条返回并带 rrule 字段。maxOccurrences 为每个重复事件的展开次数上限。返回每个事件的稳定标识 uid，供 calendar_update / calendar_delete 使用。',
+    description: '列出某时间段内的日历事件（默认未来 7 天）。start/end 为 ISO 8601 时间（含时区偏移，如 2025-01-01T09:00:00+08:00），全天事件返回 YYYY-MM-DD。查询窗口是半开区间 [start, end)：恰好在 end 时刻开始的事件不计入。默认展开重复事件（RRULE）：每个实例作为独立行返回，start/end 为该次发生时间，并带 isOccurrence=true 与 seriesStart（系列原开始时间）；非重复事件保持单行且 isOccurrence=false。expand=false 时重复事件按原始单条返回并带 rrule 字段。maxOccurrences 为每个重复事件的展开次数上限；触顶时 complete=false，表示结果被截断、不是该时间段的全部事件。返回每个事件的稳定标识 uid，供 calendar_update / calendar_delete 使用。',
     parameters: compileParameters({
       start: { type: 'string', description: '起始时间（ISO 8601，含时区偏移）。缺省为当前时间（UTC）。' },
       end: { type: 'string', description: '结束时间（ISO 8601，含时区偏移）。缺省为 start 后 7 天。' },
@@ -169,13 +169,17 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
           start: { type: 'string' },
           end: { type: 'string' },
           events: { type: 'array', items: EVENT_SCHEMA },
+          complete: { type: 'boolean', description: '结果是否完整；false 表示展开被 maxOccurrences 截断。' },
         },
         required: ['count', 'events'],
       },
       render: (_args: unknown, value: unknown): ContentBlock[] => {
-        const result = value as { count: number; start: string; end: string; events: CalendarEvent[] }
+        const result = value as { count: number; start: string; end: string; events: CalendarEvent[]; complete?: boolean }
         const lines = ['时间段 ' + result.start + ' ~ ' + result.end + ' 内共 ' + result.count + ' 个事件：']
         for (const event of result.events) lines.push(formatEvent(event))
+        if (result.complete === false) {
+          lines.push('注意：重复事件展开达到 maxOccurrences 上限，以上不是该时间段的全部事件；请缩小时间范围或调大 maxOccurrences 后重查。')
+        }
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },
@@ -190,8 +194,10 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
       assertTimeRange(start, end)
       const expand = booleanWithDefault(input, 'expand', true)
       const maxOccurrences = clampedInteger(input, 'maxOccurrences', 30, 1, 200)
-      const events = sortEvents(await service().list(start, end, { expand, maxOccurrences }, executionSignal(exec)))
-      return { count: events.length, start, end, events }
+      // 展开被 maxOccurrences 截断时明确告知，避免把「没算完」当成「就这些」。
+      let truncated = false
+      const events = sortEvents(await service().list(start, end, { expand, maxOccurrences, onTruncated: (value) => { truncated = value } }, executionSignal(exec)))
+      return { count: events.length, start, end, events, complete: !truncated }
     },
     timeoutMs: TIMEOUT_MS,
   }
@@ -376,7 +382,7 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
 
   const health: CalendarToolDefinition = {
     name: 'calendar_health',
-    description: 'dsh-calendar-pro 自检：检查 CalDAV 配置完整性（服务商/日历地址/Basic 或 OAuth 凭据），不发起网络连接或验证账号授权。遇到问题时先运行本工具定位。',
+    description: 'dsh-calendar-pro 自检：检查当前数据源的配置完整性。本地日历（默认）只需确认数据源可用，无需任何账号；只有连接 CalDAV 时才检查服务商/日历地址/Basic 或 OAuth 凭据，且不发起网络连接、不验证账号授权。遇到问题时先运行本工具定位。',
     parameters: compileParameters({}),
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -396,6 +402,16 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
       const checks: Array<Record<string, unknown>> = []
       // 每次自检都重新取配置：面板刚保存的地址应当立刻反映在这里。
       const current = configOf()
+      // 本地日历零配置、无需账号：只有连远程时才校验端点与凭据。
+      // 「还没选数据源」是正常状态，不算故障。
+      const kind = resolveBackendKind(current)
+      if (kind !== 'caldav') {
+        const detail = kind === 'local'
+          ? '本地日历（零配置，无需账号）'
+          : '尚未选择数据源（默认使用本地日历，无需账号）'
+        checks.push({ name: '数据源', ok: true, detail })
+        return { ok: true, plugin: 'dsh-calendar-pro', checks }
+      }
       const rawProvider = (current as { provider?: unknown } | undefined)?.provider
       const provider = rawProvider === undefined || rawProvider === null || rawProvider === '' ? 'custom' : String(rawProvider)
       const providerOk = (CALENDAR_PROVIDERS as readonly string[]).includes(provider)

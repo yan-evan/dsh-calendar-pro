@@ -73,12 +73,15 @@ export declare function parseEventFromICal(data: string, href: string, etag?: st
  * @param rangeStart - 查询窗口起始（ISO 8601）。
  * @param rangeEnd - 查询窗口结束（ISO 8601）。
  * @param maxOccurrences - 每个事件最多展开的实例数（防死循环）。
+ * @param options - strict 要求完整展开（不完整即报错）；overlap 按重叠判定；
+ *   onTruncated 在实例数被 maxOccurrences 截断时回调，告知结果不完整。
  * @throws {ExpansionLimitError} 迭代次数超出预算仍未能到达查询窗口时抛出。
  */
 export declare function expandEventFromICal(data: string, href: string, etag: string | undefined, rangeStart: string, rangeEnd: string, maxOccurrences: number, options?: {
     strict?: boolean;
     overlap?: boolean;
     deadline?: number;
+    onTruncated?: (truncated: boolean) => void;
 }): CalendarEvent[];
 /** 生成随机 iCal UID（带 host 后缀，形如 UUID）。 */
 export declare function generateUid(): string;
