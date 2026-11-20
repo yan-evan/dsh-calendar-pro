@@ -1,4 +1,4 @@
-/** iCloud 日历发现：用假应答覆盖解析、过滤、认证错误，绝不发真实网络请求。 */
+/** iCloud 日历发现：假应答覆盖解析、过滤与认证错误，不发网络请求。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { discoverIcloudCalendars } from '../lib/discover-icloud.js'

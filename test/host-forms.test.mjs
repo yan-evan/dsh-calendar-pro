@@ -1,9 +1,6 @@
 /**
- * Harness 0.1.7 的设置接口：entry 的 Config 就是设置项，插件不再注册命名空间。
- *
- * 这一层是 0.8.x 的真实回归 —— 那时插件只会 `ctx.settings.register(...)`，
- * 在 0.1.7 上直接抛 `ctx.settings.register is not a function`，整个插件挂载失败。
- * 全部用假宿主，不联网、不碰真实日历、不打印凭据。
+ * 0.1.7 的设置接口：entry 的 Config 即设置项，插件不注册命名空间。
+ * 0.8.x 的 settings.register 在该版本直接抛错、插件挂载失败。全部用假宿主。
  */
 import test from 'node:test';
 import { join } from 'node:path';
@@ -14,6 +11,7 @@ import { Config, liveConfig } from '../lib/host-config.js';
 import { entryIdOf, isFormsProvider, isLegacyProvider, settingsProviderOf } from '../lib/host-settings.js';
 import { attachSettings, apply } from '../lib/index.js';
 import { CalendarSettingsBackend, SETTINGS_ROUTE, hostFormsFaceOf, WRITABLE_KEYS } from '../lib/web.js';
+import { MAIL_ROUTE } from '../lib/mail/web.js';
 
 const CONNECTION_FIELDS = ['provider', 'caldavUrl', 'username', 'password', 'host', 'user', 'calendar', 'calendarId', 'authMethod', 'clientId', 'clientSecret', 'refreshToken', 'tokenUrl', 'proxyUrl'];
 const SECRETS = ['password', 'clientSecret', 'refreshToken'];
@@ -170,8 +168,10 @@ test('apply：0.1.7 宿主上照常注册 7 个工具，不再抛 register is no
     console.warn = originalWarn;
   }
   assert.equal(ctx.registered.length, 7);
-  assert.equal(ctx.routes.length, 1, '面板路由照常挂上');
+  // 面板路由 + 邮件路由各一条：邮件那条带自己的来源头校验，所以不并进面板路由。
+  assert.equal(ctx.routes.length, 2, '面板路由与邮件路由都要挂上');
   assert.equal(ctx.routes[0].path, SETTINGS_ROUTE);
+  assert.equal(ctx.routes[1].path, MAIL_ROUTE);
   assert.equal(provider.state.configured.length, 1, '自带设置页要登记 auto:false，宿主才不会再生成一页');
   assert.equal(provider.state.configured[0].presentation.auto, false);
   assert.deepEqual(warnings, [], '接上宿主表单时不该有退化告警：' + JSON.stringify(warnings));

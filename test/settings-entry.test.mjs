@@ -1,9 +1,5 @@
 /**
- * 入口分工 + 经期记录的静态契约。
- *
- * 这一层测的是「东西该在哪个页面」，渲染测试测不到：把导入面板从侧栏搬到设置页，
- * 组件本身完全正常，只有读源码/构建产物才知道按钮是不是又长回去了。
- * 另外核对中英文案成对 —— 只写一半时界面上会直接冒出中文或空字符串。
+ * 入口分工与经期记录的静态契约：按钮所属页面、中英文案成对。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -199,14 +195,18 @@ test('页脚固定在底部：内容区吃掉剩余高度，刷新线不占布�
   assert.match(workbench, /\.calendar-workbench \.dshc-loading,\.calendar-workbench \.dshc-start\{flex:1\}/)
 })
 
-test('空闲时段面板与日历视图互斥，且面板自己滚动（候选不被裁掉）', () => {
+test('找空闲时段是弹窗：日历不被替换，弹窗为 wide 且候选区自己滚动', () => {
   const client = read('templates/client.js')
   const availability = read('templates/panels/availability.js')
-  // 两者平级时，视图的 flex:1 会把面板挤扁、候选只剩两行 —— 打开面板就不渲染视图。
-  assert.match(client, /availabilityOpen \? null : body\(\)/)
-  assert.match(client, /availabilityOpen \? h\(AvailabilityPanel,/)
-  // 工作台里面板吃满剩余高度并自己滚动，页脚仍固定在底部。
-  assert.match(availability, /\.calendar-workbench \.calendar-availability\{flex:1;min-height:0;overflow:auto/)
+  // 弹窗形态：日历视图照常渲染，用户在挑空档时要能看见已有安排。
+  assert.equal(/availabilityOpen \? null : body\(\)/.test(client), false, '不该再用面板替换整页视图')
+  assert.match(client, /availabilityOpen \? h\(Dlg,\{.*size:'wide'/)
+  assert.match(client, /\.dshc-modal-wide\{width:min\(760px,94vw\)\}/)
+  // 宿主自带 Modal 时宽度只能按标记覆盖。
+  assert.match(client, /\[role=dialog\]:has\(\[data-dshc-size=wide\]\)\{width:min\(760px,94vw\)!important/)
+  // 弹窗内条件固定、候选区独立滚动；窄屏条件改单列。
+  assert.match(availability, /\.calendar-availability\.in-modal \.availability-results\{max-height:32vh;overflow:auto/)
+  assert.match(availability, /@media\(max-width:700px\)\{\.calendar-availability\.in-modal \.availability-fields\{grid-template-columns:minmax\(0,1fr\)\}/)
   // 候选列表要标明总数，避免误以为只显示了部分。
   assert.match(availability, /result\.count\+text\(' 个候选/)
 })

@@ -1,12 +1,9 @@
 /**
- * dsh-calendar-pro —— 日程管理插件（node 半身，配置走 cordis.patch.yml）。
+ * dsh-calendar-pro 插件入口（Node 侧，配置来自 cordis.patch.yml）。
  *
- * 插件导出 apply(ctx, config)：把七个面向模型的工具（calendar_list / calendar_create /
- * calendar_update / calendar_delete / calendar_search / calendar_health / calendar_find_time）
- * 注册进宿主进程的工具注册表。
- * 数据源默认走本地日历，无需任何账号；只有显式切到 CalDAV 时才需要连接配置。
- *
- * @module dsh-calendar-pro
+ * apply(ctx, config) 把七个日历工具注册进宿主工具表：calendar_list / create /
+ * update / delete / search / health / find_time。数据源默认本地日历，切到 CalDAV
+ * 才需要连接配置。
  */
 
 import { resolveConfig, type CalendarConfig } from './config.js'
@@ -17,14 +14,17 @@ import { connectionFile, readConnectionFile, writeConnectionFile } from './store
 import { Config as ConfigSchema, liveConfig } from './host-config.js'
 import { CalendarImportBackend, installCalendarImport } from './import-web.js'
 import { entryIdOf, isFormsProvider, isLegacyProvider, settingsProviderOf } from './host-settings.js'
+import { MailBackend } from './mail/backend.js'
+import { installMailWeb } from './mail/web.js'
+import type { LlmRoute, LlmStreamFace } from './mail/extract.js'
 
 /** 宿主用 entry 的 Config 生成设置表单：0.1.7 起这就是「注册设置项」的方式。 */
 export const Config = ConfigSchema
 export type Config = CalendarConfig
 
 /**
- * cordis 服务注入：apply 里要用 ctx.tools，必须显式声明注入，否则宿主会抛 cannot get property without inject。
- * name 只用于宿主诊断树里的 fiber 名（不是 service key、也不是去重键），用包名避免与其它日历插件混淆。
+ * 显式声明 ctx.tools 注入，否则宿主会抛 cannot get property without inject。
+ * name 只作为诊断树里的 fiber 名，不是 service key。
  */
 export const name = 'dsh-calendar-pro'
 export const inject = ['tools', 'settings']
@@ -70,18 +70,13 @@ export function fileSettingsFace(file: string = connectionFile()): CalendarSetti
 }
 
 /**
- * 接上配置存储：0.1.7 的宿主表单 → 老宿主的 settings 命名空间 → 插件自己的兜底文件。
- *
- * 三代宿主三条路，每一条失败都往下退而不是抛：
- *   1. **0.1.7 起**：设置项就是 entry 的 Config（`.volatile()` 字段），宿主自己投影成表单，
- *      插件不再注册命名空间；读=投影活配置，写=按 entry id 逐字段 set/unset。
- *   2. **0.1.6 及更早**：在插件加载的**同步阶段**调 `settings.register`（宿主的 register
- *      内部会 `ctx.effect(...)`，在请求处理里注册会失败，而失败一旦被吞掉，就会在保存时
- *      才暴露成「namespace is not registered」）；注册失败但 describe() 里已有我们这一段，
- *      说明是重复 apply 的第二个实例，搭既有注册的车。
- *   3. 服务不在、或注册失败且没人注册过 → 用兜底文件。
- * 返回 reason 是为了让面板说清「为什么不是宿主设置」，而不是笼统一句「不可用」。
- * @returns 读写面、它在 describe() 里的 ns，以及退化原因（没退化就没有）。
+ * 接上配置存储，按宿主版本依次降级：
+ *   0.1.7+  entry 配置直接投影成表单，读=活配置，写=按 entry id 逐字段 set/unset；
+ *   0.1.6-  同步阶段 settings.register；注册失败但 describe() 已有本段时按重复 apply 处理，
+ *           借用既有注册；
+ *   都不可用 → 插件自己的兜底文件。
+ * 返回 reason 供面板说明降级原因。
+ * @returns 读写面、describe() 里的 ns、退化原因
  */
 export function attachSettings(ctx: CalendarPluginContext, cfg: CalendarConfig): { face: CalendarSettingsFace; reason?: string; ns: string } {
   const provider = settingsProviderOf(ctx)
@@ -128,9 +123,9 @@ export function attachSettings(ctx: CalendarPluginContext, cfg: CalendarConfig):
   return { face: settingsFaceOf(provider, scope), ns: SETTINGS_NAMESPACE }
 }
 /**
- * 插件入口：惰性解析配置并注册七个日历工具。
- * @param ctx - 宿主上下文（至少含 tools.register）。
- * @param config - 插件配置（可缺省）。
+ * 插件入口：惰性解析配置，注册七个日历工具。
+ * @param ctx 宿主上下文（至少含 tools.register）
+ * @param config 插件配置，可缺省
  */
 export function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null): void {
   // 0.1.7 的宿主把 volatile 字段交成引用；摊平之后老宿主的字面量配置走同一条路。
@@ -140,9 +135,8 @@ export function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null
   } catch (error) {
     console.warn('dsh-calendar-pro: ' + (error instanceof Error ? error.message : String(error)))
   }
-  // 面板由本插件自己渲染，宿主不再按 schema 自动生成页面。
-  // 子作用域负责自动清理页面策略；settings 已在插件依赖中声明，
-  // 工具配置和自带面板都使用同一个宿主设置服务。
+  // 面板自渲染，宿主不按 schema 生成页面。settings 已在插件依赖中声明，
+  // 工具配置与面板共用同一个设置服务。
   if (typeof ctx.inject === 'function') {
     try {
       ctx.inject(['settings'], (settingsCtx: any) => {
@@ -154,22 +148,19 @@ export function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null
     }
   }
 
-  // 面板把连接配置写进 settings 之后，工具的下一次调用就该用新配置 —— 所以工具与面板
-  // 拿到的是一个 getter，而不是启动时那一份静态对象。
+  // 工具与面板拿到 getter：面板改完配置，下一次调用即生效。
   const attached = attachSettings(ctx, cfg)
   const configOf = (): CalendarConfig => ({ ...cfg, ...toCalendarConfig(attached.face.read() as Partial<CalendarSettingsValue> | undefined, null) })
 
-  // 当前 Cordis 的 ctx.tools.register() 内部就会用调用方 ctx 的 effect 登记反注册，
-  // 插件卸载时宿主自动清理 —— 不要再包一层 effect，否则会重复触发同一个 disposer。
-  // 只有「没有 ctx.effect 的旧宿主」才需要把返回的 disposer 攒起来，走 dispose 兜底。
+  // ctx.tools.register 内部已用调用方 ctx 的 effect 登记反注册，不要再包一层；
+  // 只有没有 ctx.effect 的旧宿主才需要自行收集 disposer。
   const disposers: Array<() => void> = []
   for (const definition of buildCalendarTools(configOf)) {
     const dispose = ctx.tools.register(definition)
     if (typeof ctx.effect !== 'function') disposers.push(dispose)
   }
 
-  // 面板路由挂上即用：settings 服务由 backend 在第一个请求上懒接入（见 web.ts 的
-  // ensureSettings），所以这里不依赖任何子 fiber 的时序，也不会因为重复 apply 而失效。
+  // 路由挂上即用：settings 由 backend 在首个请求懒接入，不依赖子 fiber 时序。
   const backend = new CalendarSettingsBackend({
     config: configOf,
     ctx,
@@ -185,6 +176,13 @@ export function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null
     console.warn('dsh-calendar-pro:面板路由未挂载：' + (error instanceof Error ? error.message : String(error)))
   }
 
+  // 邮件模块走独立路由与独立文件，全部挂在自己的 effect 里，不影响日历连接。
+  try {
+    installMailModule(ctx)
+  } catch (error) {
+    console.warn('dsh-calendar-pro:邮件日程识别未启用：' + (error instanceof Error ? error.message : String(error)))
+  }
+
   if (disposers.length > 0 && typeof ctx.on === 'function') {
     ctx.on('dispose', () => {
       for (const dispose of disposers) dispose()
@@ -192,6 +190,73 @@ export function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null
   }
 }
 
+
+/**
+ * 邮件日程识别模块的装配点：挂路由、懒接模型、起轮询。
+ * 全部走局部 inject，顶层仍只有 tools / settings；宿主缺哪个服务都只是降级。
+ * 轮询固定 15 秒一跳、累计够 pollSeconds 才真跑，面板改间隔下一次即生效。
+ */
+export function installMailModule(ctx: CalendarPluginContext): MailBackend {
+  let host: any = null
+  const llmService = (): LlmStreamFace | null => {
+    if (host?.llm !== undefined && host.llm !== null) return host.llm as LlmStreamFace
+    try {
+      return (typeof ctx.get === 'function' ? ctx.get('llm') ?? null : null) as LlmStreamFace | null
+    } catch (error) {
+      return null
+    }
+  }
+  const routeOf = (): LlmRoute | null => {
+    try {
+      const selection = host?.agentDefaultModel?.currentSelection?.()
+      if (selection !== undefined && selection !== null
+        && typeof selection.provider === 'string' && typeof selection.model === 'string') {
+        return { provider: selection.provider, model: selection.model }
+      }
+    } catch (error) { /* 没有默认模型就没有路由 */ }
+    return null
+  }
+  const mail = new MailBackend({ llm: () => ({ llm: llmService(), route: routeOf() }) })
+
+  installMailWeb(ctx, mail)
+
+  if (typeof ctx.inject !== 'function') return mail
+  try {
+    ctx.inject(['llm'], (llmCtx: any) => { host = llmCtx })
+  } catch (error) {
+    console.warn('dsh-calendar-pro:模型服务不可用，邮件只识别 .ics 附件')
+  }
+  try {
+    ctx.inject(['timer'], (timerCtx: any) => {
+      // 宿主没有 timer 服务就不起轮询：设置页照常能测连、能回扫，只是没有「新邮件自动识别」。
+      if (timerCtx === null || timerCtx === undefined) return
+      // 宿主有两种形态：ctx.inject(['timer'], t => t.timer) 或直接给服务本体，都认。
+      const timer = timerCtx.timer !== null && timerCtx.timer !== undefined ? timerCtx.timer : timerCtx
+      if (timer === null || timer === undefined || typeof timer.interval !== 'function') return
+      const run = (): (() => void) => {
+        let last = 0
+        let running = false
+        const tick = (): void => {
+          if (running) return
+          const config = mail.config()
+          if (!config.enabled) return
+          const now = Date.now()
+          if (last !== 0 && now - last < config.pollSeconds * 1000) return
+          last = now
+          running = true
+          void mail.poll().catch(() => { /* 失败已写进 status.lastError */ }).finally(() => { running = false })
+        }
+        const handle = timer.interval(tick, 15000)
+        return () => { if (typeof handle === 'function') handle() }
+      }
+      if (typeof timerCtx.effect === 'function') timerCtx.effect(run, 'dsh-calendar-pro: mail poller')
+      else run()
+    })
+  } catch (error) {
+    // 定时器属于可选能力：拿不到就只少了自动轮询，不该在宿主日志里留一条退化告警。
+  }
+  return mail
+}
 
 export * from './parameters.js'
 export * from './config.js'
@@ -205,3 +270,9 @@ export * from './host-settings.js'
 export * from './import-ical.js'
 export * from './import-web.js'
 export { liveConfig } from './host-config.js'
+export * from './mail/types.js'
+export * from './mail/extract.js'
+export * from './mail/store.js'
+export * from './mail/client.js'
+export * from './mail/backend.js'
+export * from './mail/web.js'

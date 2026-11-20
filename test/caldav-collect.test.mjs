@@ -1,8 +1,6 @@
 /**
- * 直接解析 calendar-query 响应的收集器。
- *
- * 目标是绕开 tsdav 「少一条数据就整批抛 incomplete response」的校验，
- * 并锁住「缺数据的条目跳过、其余照常导出」这个行为。
+ * collectCalendarObjects：直接解析 calendar-query 响应，绕开 tsdav 对响应完整性的整批校验。
+ * 缺数据的条目跳过，其余照常返回。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

@@ -12,7 +12,7 @@ if (client.includes('__ENGINE__')) {
 }
 const directory = join(root, 'templates/panels')
 const parts = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('.js')).sort().map(name => normalize(readFileSync(join(directory, name), 'utf8'))).join('\n') : ''
-// 法定节假日 / 调休数据只维护 JSON，构建期注入；公告未发布的年份 JSON 里就是没有，不猜。
+// 节假日 / 调休数据只维护 JSON，构建期注入；公告未发布的年份条目直接缺失。
 const holidayFile = join(root, 'templates/data/holidays.json')
 const holidays = existsSync(holidayFile) ? JSON.parse(readFileSync(holidayFile, 'utf8')) : { schema: 1, years: {}, sources: [] }
 if (!holidays.years || Object.keys(holidays.years).length === 0) throw new Error('templates/data/holidays.json is missing or has no years')

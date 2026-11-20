@@ -9,6 +9,23 @@ All notable changes to this project are recorded in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-20
+
+### Added
+
+- **Mail schedule detection (the headline of this release)**: connect a read-only inbox and turn times written in email into schedule candidates. Fill in the mailbox and IMAP app password in Settings — QQ Mail, 163, Gmail, Outlook and iCloud have presets. The plugin connects to IMAP itself: nothing is sent, deleted, marked as read or moved
+- **Candidates instead of silent writes**: detected schedules go to a review list first; "Create event" opens a pre-filled form and only saving writes to the calendar. One email can carry several candidates, each created or ignored on its own
+- **Optional first scan**: after connecting, you are asked whether to scan recent mail — 1 / 3 / 7 / 30 days (7 by default). Skipping still allows "Scan mail again" at any time, and processed mail does not produce duplicates
+- **New-mail nudge**: new mail is checked on the poll interval (60 seconds by default); a detected schedule puts a red badge on the floating button and shows a light toast above it. Review opens the list itself, not the calendar
+- **`.ics` invitations first**: mail with a calendar invite is parsed from the attachment, which is more accurate than reading the body
+- **What it reads**: absolute dates (`11月21日下午5点`, `2026-11-21 17:00`) and relative ones (today / tomorrow / next Wednesday); casual invitations without a "会议时间：" label (`明天下午5点，请到C992会议室`) also yield candidates; mail with a labelled info block is read even when no model is available
+- **Notes carry the schedule elements**: online meetings put the join link and meeting number into the description, one per line, instead of a generic "read from the body" note
+
+### Changed
+
+- **Find available time is a modal now**: it no longer takes over the calendar page — the calendar stays behind it. The dialog is about 760px wide, filters stay fixed while the candidate list scrolls, and filters go single-column with a near full-screen dialog on narrow displays. Picking a candidate fills the new-event form directly
+- **Per-item handling only**: each candidate offers just "Create event" and "Ignore"; when one email yields several schedules they are handled one by one. With no candidates the list shows a single line instead of scan statistics
+
 ## [0.1.3] - 2026-11-13
 
 ### Fixed
@@ -28,7 +45,6 @@ and version numbers follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - The calendar page did not refresh after a CalDAV connection was saved, so the new data only appeared after a manual refresh. A stale call in the save callback threw before the refresh could run. Saving now reloads immediately, and the main view, floating panel and settings page all refresh together
-- Installing or upgrading the plugin while DSH is running could fail activation due to dependencies being mid-write. The CalDAV component is now loaded on first use, so activation and the local calendar no longer depend on it
 
 ## [0.1.1] - 2026-11-10
 

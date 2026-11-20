@@ -1,17 +1,14 @@
 /**
- * 日历插件配置解析：provider 预设 + 手填 URL，全部在调用时惰性解析。
- * 配置缺失绝不阻止插件加载，只在工具 execute 时抛出带中文指引的错误。
- *
+ * 配置解析：provider 预设 + 手填 URL，调用时惰性解析。
+ * 配置缺失不阻止插件加载，只在工具执行时抛带中文指引的错误。
  * @module dsh-calendar-pro/config
  */
 /** 支持的 provider 预设。 */
 export type CalendarProvider = 'google' | 'icloud' | 'nextcloud' | 'custom';
 export type CalendarAuthMethod = 'basic' | 'oauth';
 /**
- * 数据源：本地日历（插件自己存）或远程 CalDAV。
- *
- * 两者互斥，任何时刻只有一个生效；`undefined` 是合法且重要的第三种状态 ——
- * 「用户还没选」，此时面板显示首启页，不产生任何数据源。
+ * 数据源：本地日历或远程 CalDAV，互斥生效。
+ * undefined 是合法状态：用户还没选，面板显示首启页，不产生任何数据源。
  */
 export type BackendKind = 'local' | 'caldav';
 /** 长期 OAuth 凭据；短期 access token 只保留在运行时内存中。 */
@@ -52,9 +49,7 @@ export interface CalendarConfig {
     /** nextcloud：日历名。 */
     calendar?: string;
     /**
-     * HTTP 代理地址，如 http://127.0.0.1:7890。
-     * 当前网络无法直连时可填本地代理客户端的端口；可直连时留空即可。
-     * 插件只把本插件的请求路由到该代理，不影响其他插件。
+     * HTTP 代理地址，如 http://127.0.0.1:7890。只作用于本插件的请求；能直连时留空。
      */
     proxyUrl?: string;
 }
@@ -78,20 +73,17 @@ export declare class ConfigError extends Error {
 }
 export declare const CALENDAR_PROVIDERS: readonly CalendarProvider[];
 /**
- * 生效的数据源。三种来源，优先级从高到低：
- *
- * 1. 显式 `backend`（面板选中后写入，或 YAML 手写）；
- * 2. 旧配置里已经填过 CalDAV 端点 / 凭据 —— 这类用户本来就在用远程日历，
- *    升级后不能拿首启页拦住他们，直接视为 caldav；
- * 3. 都没有 → `undefined`，表示「还没选」，面板显示首启页。
- *
- * **绝不能在这里默认 local**：那样「首次进入」与「已有空本地日历」就分不开了。
+ * 生效的数据源，优先级从高到低：
+ * 1. 显式 backend（面板选中或 YAML 手写）；
+ * 2. 旧配置里已有 CalDAV 端点或凭据，视为 caldav，升级后不会被首启页拦住；
+ * 3. 都没有 → undefined。
+ * 这里不能默认 local，否则「首次进入」与「已有本地日历」无法区分。
  */
 export declare function resolveBackendKind(config: CalendarConfig | undefined): BackendKind | undefined;
 /**
- * 解析配置为可用的 caldavUrl + 凭证。配置缺失抛出 ConfigError（中文指引）。
- * @param config - 插件 config（可能 undefined）。
- * @param env - 环境变量来源（测试可注入）。
+ * 解析为可用的 caldavUrl + 凭证；缺失时抛 ConfigError（中文指引）。
+ * @param config 插件 config，可能为 undefined
+ * @param env 环境变量来源，测试可注入
  */
 export declare function resolveConfig(config: CalendarConfig | undefined, env?: NodeJS.ProcessEnv): ResolvedConfig;
 /** Google 必须使用 OAuth；其他 provider 不会被环境中的 Google 凭据切换认证方式。 */

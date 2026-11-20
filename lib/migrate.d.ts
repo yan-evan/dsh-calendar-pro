@@ -1,14 +1,9 @@
 /**
- * 数据源迁移：把一端的事件**原样**搬到另一端（本地 ⇄ CalDAV）。
+ * 数据源迁移：把一端的事件原样搬到另一端（本地 ⇄ CalDAV），一次性、手动、幂等。
  *
- * 只做一次性、手动、幂等的手动搬运，**不做持续同步** —— 双写一旦失败或离线，
- * 两份数据立刻不一致，接着就要解决冲突，复杂度不成比例。
- *
- * 冲突策略（已与用户确认）：
- *   · 同 UID 已存在     → 跳过，绝不改目标端内容（别人可能已经改过那条）；
- *   · 同标题 + 同起止    → 判为「疑似重复」，默认跳过并列出来给用户看；
- *   · 时间重叠但内容不同 → 正常搬运，日历本来就允许重叠，这不算冲突；
- *   · 缺少 iCal UID     → 跳过并计数（没有 UID 就没法判断是不是同一条）。
+ * 不做持续同步：双写失败或离线会让两份数据立即不一致。
+ * 冲突策略：同 UID 已存在跳过，不改目标端内容；同标题且同起止判为疑似重复，
+ * 默认跳过并列出；时间重叠但内容不同照常搬；缺 UID 跳过并计数。
  */
 import type { CalendarBackend } from './backend.js';
 import type { BackendKind } from './config.js';
@@ -50,10 +45,9 @@ export interface MigrateResult {
 /** 只读预检：不写任何东西，把三类情况数清楚，交给用户决定要不要继续。 */
 export declare function planMigration(from: CalendarBackend, to: CalendarBackend, signal?: AbortSignal): Promise<MigratePlan>;
 /**
- * 执行迁移：只搬预检里判为「将新建」的那些，**逐条原样搬运**（`raw()` 取原文，
- * 不走解析再拼装，否则 ATTENDEE / EXDATE 这类没建模的字段会丢）。
- *
- * @param limit 单次最多搬多少条；超出部分让用户分批执行（避免一个请求挂太久）。
+ * 执行迁移：只搬预检判为将新建的条目，逐条原样搬运（raw() 取原文。
+ * 解析再拼装会丢掉 ATTENDEE / EXDATE 这类未建模字段）。
+ * @param limit 单次最多搬多少条，超出部分分批执行
  */
 export declare function runMigration(from: CalendarBackend, to: CalendarBackend, plan: MigratePlan, options?: {
     limit?: number;

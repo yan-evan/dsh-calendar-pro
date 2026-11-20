@@ -1,7 +1,5 @@
 /**
- * 导出合并：文本级拼接，不能有损。
- *
- * 重点：VEVENT 全部保留、VTIMEZONE 按 TZID 去重、X- 扩展属性原样、空输入不炸。
+ * 导出合并：文本级拼接。VEVENT 全部保留、VTIMEZONE 按 TZID 去重、X- 属性原样、空输入不报错。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

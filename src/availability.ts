@@ -47,8 +47,8 @@ export function availabilityRequest(input: AvailabilityInput) {
 }
 
 /**
- * 只用完整展开的事件集合计算空闲；日程标题不进入计算结果。
- * @param complete - 事件集合是否完整；false 表示集合被截断，结果只反映已知的部分。
+ * 只用完整展开的事件集合计算空闲；标题不参与计算。
+ * @param complete 事件集合是否完整，false 表示结果只反映已知部分
  */
 export function findAvailableTimes(events: CalendarEvent[], input: AvailabilityInput, complete = true): AvailabilityResult {
   const request = availabilityRequest(input), { formatter, startMs, endMs, durationMinutes, bufferMinutes, weekdays, workStart, workEnd } = request

@@ -39,7 +39,13 @@ Most things in your calendar can be done by simply telling DSH what you want —
     - [7.2 Export](#72-export)
   - [8. Lunar Calendar and Public Holidays](#8-lunar-calendar-and-public-holidays)
   - [9. Interface Language](#9-interface-language)
-  - [10. FAQ](#10-faq)
+  - [10. Schedules from Email](#10-schedules-from-email)
+    - [10.1 Connect a Mailbox](#101-connect-a-mailbox)
+    - [10.2 First Scan](#102-first-scan)
+    - [10.3 Review List](#103-review-list)
+    - [10.4 When New Mail Arrives](#104-when-new-mail-arrives)
+    - [10.5 What It Reads and What It Skips](#105-what-it-reads-and-what-it-skips)
+  - [11. FAQ](#11-faq)
 
 ---
 
@@ -189,18 +195,24 @@ You can also ask the agent to run a self-check; it will report whether the provi
 
 ### 4.2 Top Action Bar
 
-The sidebar calendar has three groups of controls:
+Four action buttons sit at the top right of the page header:
 
-![Top action bar of the sidebar calendar](assets/screenshots/02-toolbar.png)
+![Header and action buttons of the sidebar calendar](assets/screenshots/02-toolbar.png)
+
+| Button | What it does |
+| --- | --- |
+| **Mail schedules** | Opens the review list; shows a count while something is pending |
+| **Calendar connection** | Opens the connection form |
+| **Find available time** | Opens the free-slot dialog with the calendar behind it (unavailable until a remote calendar is connected) |
+| **New event** | Opens the new-event form |
+
+A second row above the calendar grid holds the paging and view controls:
 
 | Control | Where | What it does |
 | --- | --- | --- |
-| **Calendar connection** | Top right | Opens the connection form |
-| **Find available time** | Top right | Opens the free-slot panel (unavailable until a remote calendar is connected) |
-| **New event** | Top right | Opens the new-event form |
-| ‹ date › Today | Second row, left | Previous period / back to today / next period |
-| Month / Week / Agenda | Second row, right | Switches views; your choice is remembered |
-| Refresh | Second row, right | Reloads the current time window |
+| ‹ date › Today | Left | Previous period / back to today / next period |
+| Month / Week / Agenda | Right | Switches views; your choice is remembered |
+| Refresh | Right | Reloads the current time window |
 
 ### 4.3 Floating Button
 
@@ -208,11 +220,13 @@ The calendar icon in the bottom-right corner of a conversation opens the calenda
 
 ![Floating calendar](assets/screenshots/10-float.png)
 
-The floating panel is for a **quick look**: switch month / week / agenda, move between dates, glance at your day, or create an event. Connecting calendars and finding available time are done in the sidebar.
+The floating panel only carries paging, month / week / agenda, refresh and **New event**. Mail schedules, calendar connection and finding available time stay in the sidebar so one feature never has two entry points.
 
 ### 4.4 Settings Page
 
-**DSH Settings → Calendar** has three sections: **Calendar source**, **Cycle tracking**, and **ICS import and export**.
+**DSH Settings → Calendar** has four sections: **Calendar source**, **Mail schedule detection**, **Cycle tracking**, and **ICS import and export**.
+
+The figure shows two of them; mail detection is covered in [10.1](#101-connect-a-mailbox) and the ICS section in [Chapter 7](#7-ics-import-and-export).
 
 ![Settings: calendar source and cycle tracking](assets/screenshots/08-settings-1.png)
 
@@ -284,6 +298,8 @@ Click **Find available time** in the action bar; the panel replaces the calendar
 
 ![Find available time](assets/screenshots/07-find-time.png)
 
+The dialog states the search and display time zone near the top; it follows your system zone, no need to change it.
+
 After clicking **Find slots**:
 
 - Results are sorted by time, showing **at most the earliest 20 candidates**; candidates may overlap
@@ -354,7 +370,72 @@ The interface **follows the DSH language setting** (DSH Settings → General →
 
 Event titles, locations and notes are your own data and are always displayed as written, never translated.
 
-## 10. FAQ
+## 10. Schedules from Email
+
+"A meeting at 3pm Wednesday" in your inbox no longer needs to be retyped into the calendar. The plugin can connect a **read-only** inbox and turn schedules that state a concrete time into **candidates** — nothing reaches your calendar until you confirm.
+
+### 10.1 Connect a Mailbox
+
+Open **DSH Settings → Calendar → Mail schedule detection**:
+
+1. **Provider**: QQ Mail, NetEase 163, Gmail, Outlook, iCloud, or "Custom IMAP". Host and port follow automatically.
+2. **Account**: your full email address.
+3. **App password**: not your login password — the IMAP app password generated in your mail settings (for QQ Mail: enable POP3/IMAP/SMTP under Settings → Account first).
+4. Leave the rest alone unless you need to change it: folder defaults to `INBOX`, SSL on, port 993.
+5. Click **Test connection**, wait for "Connection OK", then **Save**.
+
+![Mail schedule detection in Settings](assets/screenshots/16-mail-settings.png)
+
+After a successful save the card shows three status lines: the connected account and host, the last scan time, and a capability note. With no default model available it reads "No default model available: .ics attachments only", and bodies are not read at all. Once the first scan has run, a **Scan mail again** button appears on the card.
+
+**It does exactly three things**: connect, read on demand, and store results on this machine. Nothing is sent, deleted, marked as read, or moved. The app password lives in `$DSH_HOME/data/dsh-calendar-pro/mail.json` on this machine only.
+
+### 10.2 First Scan
+
+After the first successful save you are asked once: **scan recent mail now?** Pick 1 / 3 / 7 / 30 days (7 by default), or skip it — "Scan mail again" in Settings covers it later.
+
+The scan runs message by message in the background; closing the window does not stop it. Messages already processed are remembered, so rescanning does not duplicate candidates.
+
+### 10.3 Review List
+
+Detected schedules wait in a **review list** rather than entering the calendar. Two ways in:
+
+- The **"Mail schedules"** button at the top right of the sidebar calendar (shows a count while something is pending)
+- **Review** in the toast above the floating button
+
+The first scan in Settings also shows its result directly, no extra click.
+
+![Review list: title, time, source mail and two actions](assets/screenshots/17-mail-todo.png)
+
+The window is titled "Schedules to review from email". Each candidate is a card: title and state (pending / retry), time with the weekday, location, source email (sender · subject · received time) and the message snippet, plus two buttons at the bottom:
+
+| Action | Effect |
+| --- | --- |
+| **Create event** | Opens a **pre-filled form** (title, time, location, description with the source email); you check or adjust it, then save |
+| **Ignore** | Only this candidate: it leaves the list, other candidates from the same email stay |
+
+**Why two clicks**: the detection comes from a model reading the body, so times and titles can be slightly off. Showing you a filled form beats writing into the calendar and rolling back.
+
+### 10.4 When New Mail Arrives
+
+The plugin checks for new mail every **poll interval** (60 seconds by default). When a schedule is found:
+
+- A red badge appears on the floating button, showing how many candidates you have not looked at
+- A light toast appears above it: "N schedule(s) found" with "From a mail you just received; nothing is written to the calendar until you confirm", and two buttons, **Review** and **Later**; **Review** opens **only the review list**, it does not expand the calendar
+
+![New-mail prompt: badge and toast](assets/screenshots/18-mail-toast.png)
+
+Opening the list clears the badge; the candidates you did not handle stay in the list. An empty list shows a single line, "No schedules to review"; with no mailbox configured it points to Settings instead.
+
+### 10.5 What It Reads and What It Skips
+
+**Reads**: arrangements with a concrete date and time, such as "Dec 1, 10am, room 3F, Q4 review" or "tomorrow 5pm, C992 meeting room". The date may be "Nov 21", "this Thursday" or "tomorrow" — it has to come with a clock time. Mail with an `.ics` invitation is parsed from the attachment, which is more accurate than reading the body.
+
+**Skips**: tasks without a concrete time, such as "send the file asap" or "find a time next week". Those never become candidates or to-dos. At most 5 schedules are taken from one email, so a broadcast mail cannot flood the list.
+
+**Can be turned off**: disable "Enable detection" to stop polling; disable "Send bodies to the model" to read only `.ics` attachments, keeping bodies away from the model.
+
+## 11. FAQ
 
 **Q: After installing, the sidebar is empty and only shows "Get started".**
 On first use, choose where events should be stored. Click "Use local calendar" to begin.

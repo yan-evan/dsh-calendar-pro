@@ -1,7 +1,5 @@
 /**
- * 迁移器：预检只读、执行幂等、原样搬运。
- *
- * 用两个独立的本地后端当「源 / 目标」，把冲突判定与幂等跑实，不依赖网络。
+ * 迁移器：预检只读、执行幂等、原样搬运。用两个本地后端当源与目标。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

@@ -1,3 +1,5 @@
+/** $DSH_HOME/data/dsh-calendar-pro/ ... */
+export declare function dataDirOf(env?: NodeJS.ProcessEnv): string;
 /** $DSH_HOME/data/dsh-calendar-pro/connection.json（DSH_HOME 缺省 ~/.dsh）。 */
 export declare function connectionFile(env?: NodeJS.ProcessEnv): string;
 /** $DSH_HOME/data/dsh-calendar-pro/calendar.json：本地日历的唯一数据文件。 */

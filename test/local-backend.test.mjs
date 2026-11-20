@@ -1,8 +1,6 @@
 /**
- * 本地日历后端：一个 JSON 文件承载 CRUD，语义必须与 CalDAV 一侧对齐。
- *
- * 重点：uid 形状是 `local://<iCalUID>`、重复事件在 list 里展开而 all 里不展开、
- * 导入绝不覆盖已存在资源、坏记录不拖垮整份文件。
+ * 本地日历后端：单个 JSON 文件承载 CRUD，语义与 CalDAV 一侧对齐。
+ * uid 形状 local://<iCalUID>；list 展开重复事件、all 不展开；导入不覆盖已有资源。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

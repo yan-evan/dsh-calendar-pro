@@ -1,6 +1,6 @@
 /**
- * 全量取数策略：某些 CalDAV 服务器的 multiget 会漏对象，tsdav 校验后直接抛
- * `incomplete response`。这里锁住「先单次 query 带数据、失败再退回多取」的行为。
+ * 全量取数策略：先发一次带 calendar-data 的 query，失败再退回 multiget。
+ * 部分服务器的 multiget 会漏对象，tsdav 因此整批抛 incomplete response。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

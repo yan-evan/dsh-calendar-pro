@@ -11,6 +11,8 @@ let calendarHostContext;
         // Resolve against the Harness document base, including any reverse-proxy prefix.
         const ROUTE = "_dsh/dsh-calendar-pro/settings";
         const IMPORT_ROUTE = "api/dsh-calendar-pro/import";
+        /** 邮件日程识别：独立路由，写操作要带来源头。 */
+        const MAIL_ROUTE = "_dsh/dsh-calendar-pro/mail";
         /** 三视图；order 决定 tab 顺序。 */
         const VIEWS = ["month", "week", "agenda"];
         const WEEKDAYS_ZH = ["一", "二", "三", "四", "五", "六", "日"];
@@ -146,6 +148,10 @@ let calendarHostContext;
             ".dshc-drawer{width:min(420px,92vw);height:100%;background:var(--dsw-alias-bg-layer-1,#fff);border-left:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));padding:18px;overflow:auto;box-shadow:var(--dsw-elevation-prominent,0 10px 30px rgba(0,0,0,.2))}",
             ".dshc-modalwrap{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.42));display:flex;align-items:center;justify-content:center;z-index:70;padding:20px}",
             ".dshc-modal{width:min(460px,94vw);max-height:88vh;overflow:auto;background:var(--dsw-alias-bg-layer-1,#fff);border-radius:14px;padding:18px;box-shadow:var(--dsw-elevation-prominent,0 10px 30px rgba(0,0,0,.25))}",
+            ".dshc-modal-wide{width:min(760px,94vw)}",
+            // 宿主自带的 Modal：宽度由宿主组件定，只能按标记覆盖这一层。
+            "[role=dialog]:has([data-dshc-size=wide]){width:min(760px,94vw)!important;max-width:min(760px,94vw)!important}",
+,
             ".dshc-field{margin-bottom:9px}",
             ".dshc-field label{display:block;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:4px}",
             ".dshc-input,select.dshc-input,textarea.dshc-input{width:100%;box-sizing:border-box;background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06)));border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.38));border-radius:9px;padding:7px 9px;font:inherit;color:inherit}",
@@ -216,6 +222,38 @@ let calendarHostContext;
         const UI = {
             zh: {
                 "nav.title": "日历",
+                // 邮件日程识别（zh）
+                "mail.button": "邮件日程",
+                "mail.buttonCount": "邮件日程 {n}",
+                "mail.settingsTitle": "邮件日程识别",
+                "mail.settingsIntro": "连接一个只读收件箱，把邮件里明确写出的会议、约见整理成日程候选。只读取，不发送、不删除、不标已读；正文只在开启「交给模型」时送给当前默认模型。",
+                "mail.provider": "邮箱服务商", "mail.provider.qq": "QQ 邮箱", "mail.provider.163": "网易 163 邮箱",
+                "mail.provider.gmail": "Gmail", "mail.provider.outlook": "Outlook", "mail.provider.icloud": "iCloud 邮箱", "mail.provider.custom": "自定义 IMAP",
+                "mail.user": "邮箱账号", "mail.password": "授权码", "mail.passwordSaved": "已保存，留空则不修改", "mail.passwordHint": "邮箱设置里生成的 IMAP 授权码",
+                "mail.imapHost": "IMAP 主机", "mail.imapPort": "端口", "mail.imapSecure": "SSL", "mail.folder": "收件箱文件夹",
+                "mail.poll": "轮询间隔（秒）", "mail.defaultDays": "默认回扫天数", "mail.useLlm": "正文交给模型识别", "mail.enabled": "启用自动识别",
+                "mail.testConnection": "测试连接", "mail.testing": "正在测试…", "mail.testOk": "连接成功", "mail.saved": "已保存",
+                "mail.statusConnected": "已连接：{user}（{host}）", "mail.statusUnconfigured": "还没配置邮箱",
+                "mail.statusAnalyzed": "上次回扫：{when}", "mail.statusNotAnalyzed": "还没做过首次回扫",
+                "mail.lastError": "上次出错：{message}", "mail.noLlm": "当前没有可用的默认模型：只能识别 .ics 附件", "mail.reanalyze": "重新分析邮件",
+                "mail.dialogTitle": "邮件里的待确认日程", "mail.empty": "没有待确认的日程。",
+                "mail.emptyUnconfigured": "还没连接邮箱。到设置页的「邮件日程识别」里配置账号后再来。",
+                "mail.create": "创建日程", "mail.ignore": "忽略",
+                "mail.statePending": "待确认", "mail.stateFailed": "待重试",
+"mail.failedHint": "有邮件没读出来，可以重新分析一次。",
+                "mail.failedReason": "原因：{message}",
+                "mail.noTimeParsed": "这封邮件没解析出可用的时间",
+                "mail.source": "来源邮件", "mail.from": "发件人", "mail.untitled": "（无标题）",
+"mail.lowConfidence": "模型把握不大，建议核对时间与标题",
+                "mail.notAnalyzedHint": "还没分析过历史邮件。到设置页的「邮件日程识别」里可以扫最近 1/3/7/30 天。",
+                "mail.analyzeTitle": "分析最近的邮件", "mail.analyzeIntro": "会把这段时间收件箱里的邮件逐封识别一遍，只把明确写了具体时间的日程整理成候选。邮件正文会交给当前默认模型；关掉「正文交给模型」则只认 .ics 附件。",
+                "mail.analyzeDays": "分析范围", "mail.daysOption": "最近 {n} 天",
+                "mail.analyzeStart": "开始分析", "mail.analyzeLater": "以后再说",
+                "mail.analyzeRunning": "正在分析：{done}/{total}", "mail.analyzeKeepOpen": "分析在后台继续，关掉这个窗口也不会中断。",
+                "mail.analyzeDone": "分析完成，新增 {n} 条日程候选。", "mail.analyzeFailed": "分析中断：{message}",
+                "mail.toastTitle": "识别到 {n} 个日程", "mail.toastBody": "来自刚收到的邮件，需要你确认后才会写进日历。",
+                "mail.toastOpen": "查看待办", "mail.toastLater": "稍后",
+
                 "section.title": "日历",
                 "section.intro": "在设置页直接查看和编辑 CalDAV 上的日程：月/周/议程三种视图，点一下就能改时间、换标题、加重复规则。",
                 "view.month": "月", "view.week": "周", "view.agenda": "议程",
@@ -321,6 +359,38 @@ let calendarHostContext;
             },
             en: {
                 "nav.title": "Calendar",
+                // Mail schedule detection (en)
+                "mail.button": "Mail schedules",
+                "mail.buttonCount": "Mail {n}",
+                "mail.settingsTitle": "Mail schedule detection",
+                "mail.settingsIntro": "Connect a read-only inbox and turn meetings or appointments explicitly written in email into schedule candidates. Read-only: nothing is sent, deleted or marked as seen. Bodies reach the current default model only when that switch is on.",
+                "mail.provider": "Provider", "mail.provider.qq": "QQ Mail", "mail.provider.163": "NetEase 163",
+                "mail.provider.gmail": "Gmail", "mail.provider.outlook": "Outlook", "mail.provider.icloud": "iCloud Mail", "mail.provider.custom": "Custom IMAP",
+                "mail.user": "Account", "mail.password": "App password", "mail.passwordSaved": "Saved; leave blank to keep it", "mail.passwordHint": "IMAP app password from your mail settings",
+                "mail.imapHost": "IMAP host", "mail.imapPort": "Port", "mail.imapSecure": "SSL", "mail.folder": "Inbox folder",
+                "mail.poll": "Poll interval (s)", "mail.defaultDays": "Default scan range", "mail.useLlm": "Send bodies to the model", "mail.enabled": "Enable detection",
+                "mail.testConnection": "Test connection", "mail.testing": "Testing…", "mail.testOk": "Connection OK", "mail.saved": "Saved",
+                "mail.statusConnected": "Connected: {user} ({host})", "mail.statusUnconfigured": "No mailbox configured yet",
+                "mail.statusAnalyzed": "Last scan: {when}", "mail.statusNotAnalyzed": "No first scan yet",
+                "mail.lastError": "Last error: {message}", "mail.noLlm": "No default model available: only .ics attachments are read", "mail.reanalyze": "Scan mail again",
+                "mail.dialogTitle": "Schedules found in mail", "mail.empty": "Nothing to confirm.",
+                "mail.emptyUnconfigured": "No mailbox connected yet. Configure it under Mail schedule detection in Settings.",
+                "mail.create": "Create event", "mail.ignore": "Ignore",
+                "mail.statePending": "To confirm", "mail.stateFailed": "Retry",
+"mail.failedHint": "Some mail could not be read; try scanning again.",
+                "mail.failedReason": "Reason: {message}",
+                "mail.noTimeParsed": "No usable time was parsed from this email",
+                "mail.source": "Source email", "mail.from": "From", "mail.untitled": "(untitled)",
+"mail.lowConfidence": "Low confidence from the model; double-check the time and title",
+                "mail.notAnalyzedHint": "No history scanned yet. Scan the last 1/3/7/30 days under Mail schedule detection in Settings.",
+                "mail.analyzeTitle": "Scan recent mail", "mail.analyzeIntro": "Each message in the inbox for that period is read once; only schedules that state a concrete time become candidates. Bodies go to the current default model unless that switch is off, in which case only .ics attachments are read.",
+                "mail.analyzeDays": "Range", "mail.daysOption": "Last {n} days",
+                "mail.analyzeStart": "Start scan", "mail.analyzeLater": "Not now",
+                "mail.analyzeRunning": "Scanning: {done}/{total}", "mail.analyzeKeepOpen": "The scan continues in the background if you close this.",
+                "mail.analyzeDone": "Scan finished: {n} new candidates.", "mail.analyzeFailed": "Scan failed: {message}",
+                "mail.toastTitle": "{n} schedule(s) found", "mail.toastBody": "From mail that just arrived. Nothing is written to your calendar until you confirm.",
+                "mail.toastOpen": "Review", "mail.toastLater": "Later",
+
                 "section.title": "Calendar",
                 "section.intro": "View and edit your CalDAV calendar right here: month, week and agenda views; click any event to retitle it, move it, or add a recurrence rule.",
                 "view.month": "Month", "view.week": "Week", "view.agenda": "Agenda",
@@ -547,7 +617,7 @@ let calendarHostContext;
                 return () => { };
             }
         }
-        /** 文案：{name} 形式的占位符按 params 替换，缺参时保留原样（宁可露出花括号也不吞字）。 */
+        /** 文案：{name} 占位符按 params 替换，缺参时原样保留花括号。 */
         function t(key, params) {
             const dict = UI[UI_LANG] || UI.zh;
             let text = dict[key];
@@ -559,17 +629,38 @@ let calendarHostContext;
         }
         /** 调插件自己的路由；错误码原样带出，方便上层区分「没配置」与「服务器拒绝」。 */
         const API_TIMEOUT_MS = 15000;
-        async function api(action, payload, signal) {
-            const init = { credentials: "same-origin", method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ action }, payload)) };
-            // 请求必须有上限：挂起的 Promise 会让乐观覆盖一直盖着、撤销条永不出现，
-            // 表现就是「界面改了、服务器没改」而用户以为成功。超时按失败处理（调用方会回滚并对账）。
-            if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
-                if (action === 'availability') init.signal = AbortSignal.timeout(25000);
-                else if (action === 'exportIcs' || action === 'switchBackend') init.signal = AbortSignal.timeout(120000);
-                else init.signal = AbortSignal.timeout(API_TIMEOUT_MS);
+        /**
+         * 两个同源路由的差异收敛在这里：地址、附加头、按动作的超时、报错是否本地化。
+         * 请求体与响应校验共用一份。
+         */
+        const ENDPOINTS = {
+            calendar: {
+                url: ROUTE,
+                headers: {},
+                timeoutFor: (action) => action === "availability" ? 25000 : (action === "exportIcs" || action === "switchBackend") ? 120000 : API_TIMEOUT_MS,
+                localize: true
+            },
+            mail: {
+                url: MAIL_ROUTE,
+                headers: { "X-DSH-Calendar-Pro-Mail": "1" },
+                // 测试连接要真连一次 IMAP，给足 30 秒；其余动作都很快。
+                timeoutFor: (action) => action === "testConnection" ? 30000 : 20000,
+                localize: false
             }
-            if (signal) init.signal = init.signal && typeof AbortSignal.any === 'function' ? AbortSignal.any([init.signal, signal]) : signal;
-            const res = await fetch(ROUTE, init);
+        };
+        /**
+         * POST 一个动作并返回 body.value。
+         * 请求都带超时：挂起的 Promise 会让乐观覆盖一直盖着、撤销条不出现，
+         * 表现为界面已改而服务器未改。
+         */
+        async function postJson(endpoint, action, payload, signal) {
+            const spec = ENDPOINTS[endpoint];
+            const init = { credentials: "same-origin", method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, spec.headers), body: JSON.stringify(Object.assign({ action }, payload)) };
+            if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+                init.signal = AbortSignal.timeout(spec.timeoutFor(action));
+            }
+            if (signal) init.signal = init.signal && typeof AbortSignal.any === "function" ? AbortSignal.any([init.signal, signal]) : signal;
+            const res = await fetch(spec.url, init);
             let body = null;
             try {
                 body = await res.json();
@@ -581,13 +672,18 @@ let calendarHostContext;
                 const message = body && body.error && body.error.message ? body.error.message : ("HTTP " + res.status);
                 const error = new Error(message);
                 error.status = res.status;
-                error.code = body && body.error ? body.error.code : undefined;
-                error.message = backendMessage(error);
+                if (spec.localize) {
+                    error.code = body && body.error ? body.error.code : undefined;
+                    error.message = backendMessage(error);
+                }
                 throw error;
             }
             return body.value;
         }
-        // ───────────────────────────── 时间与格式 ─────────────────────────────
+        function api(action, payload, signal) { return postJson("calendar", action, payload, signal); }
+        /** 邮件路由：与日历路由分开；写操作带来源头，后端据此拒掉跨源伪造请求。 */
+        function mailApi(action, payload, signal) { return postJson("mail", action, payload, signal); }
+        // 时间与格式
         /** 事件时间是「全天 = YYYY-MM-DD」或「定时 = UTC ISO」，两种都要能解析。 */
         function isDateOnly(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")); }
         function startDate(event) { return isDateOnly(event.start) ? new Date(event.start + "T00:00:00") : new Date(event.start); }
@@ -727,7 +823,7 @@ let calendarHostContext;
                 return startDate(a) - startDate(b);
             });
         }
-        // ───────────────────────────── 宿主 UI 组件（可选） ─────────────────────────────
+        // 宿主 UI 组件（可选）
         // 平台的 seed 模块表里有 ui-primitives；老宿主没有时退回同名自绘控件，
         // 面板不会因为「组件库不在」整块消失。
         var PRIM = null;
@@ -762,15 +858,20 @@ let calendarHostContext;
                 h("span", null, props.label)
             ]);
         }
-        /** Modal：官方版是 portal + 遮罩 + Esc 语义；没有它时用同一套 class 自绘。 */
+        /** Modal：宿主有就用官方版（portal + 遮罩 + Esc），没有时用同一套 class 自绘。 */
+        /**
+         * 弹窗外壳。size="wide" 给内容多的面板（找空闲时段）；
+         * 宿主 Modal 下宽度由宿主决定，只能靠 data 标记 + CSS 覆盖。
+         */
         function Dlg(props) {
+            const sizeAttr = props.size === "wide" ? "wide" : undefined;
             if (PRIM && typeof PRIM.Modal === "function") {
                 return h(PRIM.Modal, {
                     open: props.open,
                     onClose: props.onClose,
                     title: props.title,
                     closeLabel: props.closeLabel || props.title,
-                    children: h("div", { "data-dshc-scope": "1" }, props.children),
+                    children: h("div", { "data-dshc-scope": "1", "data-dshc-size": sizeAttr }, props.children),
                     footer: props.footer
                 });
             }
@@ -778,7 +879,7 @@ let calendarHostContext;
                 return null;
             return h("div", { className: "dshc-modalwrap", onMouseDown: (e) => { if (e.target === e.currentTarget)
                     props.onClose(); } }, [
-                h("div", { className: "dshc-modal" }, [
+                h("div", { className: "dshc-modal" + (sizeAttr === "wide" ? " dshc-modal-wide" : "") }, [
                     h("div", { style: { position: "relative" } }, [
                         h("div", { className: "dshc-drawertitle" }, props.title),
                         h("button", { type: "button", className: "dshc-btn ghost dshc-close", onClick: props.onClose, "aria-label": props.closeLabel || props.title }, "\u2715")
@@ -806,10 +907,9 @@ let calendarHostContext;
             catch (e) { /* 忽略 */ }
             return false;
         }
-        // ───────────────────────────── 拖拽/键盘改期的几何 ─────────────────────────────
-        // 拖动 / 缩放手柄 / 键盘微调共用的纯函数：不碰 DOM、不认 React，
-        // 跨天/跨月/DST/吸附边界由单测直接覆盖（见 test/schedule.test.mjs）。
-        /** 全天事件与定时事件共用一个「槽位」概念：某天 + 当天第几分钟 + 时长。 */
+        // 拖拽 / 缩放手柄 / 键盘微调共用的纯函数：不碰 DOM、不依赖 React，
+        // 跨天、跨月、DST、吸附边界由 test/schedule.test.mjs 覆盖。
+        /** 全天事件与定时事件共用「槽位」：某天 + 当天第几分钟 + 时长。 */
         const SNAP_MINUTES = 15;
         const RESIZE_MIN_MINUTES = 15;
         function snapMinutes(value, step) {
@@ -825,9 +925,8 @@ let calendarHostContext;
             return { dayKey: dayKey(start), minutes, durationMinutes, allDay: event.allDay === true };
         }
         /**
-         * 槽位 + 位移 → 新槽位。
-         * 位移以「天 + 分钟」给（拖动时由像素换算），跨天/跨月/跨年都靠时间戳自然进位，
-         * 最后把开始时间吸附到 15 分钟并钳在当天 00:00 与「当天结束前还放得下整个时长」之间。
+         * 槽位 + 位移 → 新槽位。位移按「天 + 分钟」给，跨天跨月跨年由时间戳进位；
+         * 结果吸附到 15 分钟，并钳在当天 00:00 与「当天结束前放得下整个时长」之间。
          */
         function moveSlot(slot, deltaDays, deltaMinutes, step) {
             // 分钟先合成「当天内 + 跨几天」，再用日历日相加 —— 不能用「天 × 1440 毫秒」当瞬时位移：
@@ -868,12 +967,11 @@ let calendarHostContext;
             return { start: isoOf(start), end: isoOf(end) };
         }
         /**
-         * 这一周的日程实际占用的时段 → 时间轴窗口（分钟，0–1440）。
+         * 这一周日程实际占用的时段 → 时间轴窗口（分钟，0–1440）。
          *
-         * 周视图不再画满 24 小时：满屏 24 小时等于每小时只有十几像素，半小时的会议挤成一条线。
-         * 这里按「最早开始 → 最晚结束」算窗口，前后各留 30 分钟余量、至少 6 小时、对齐到整点。
-         * 窗口内是线性刻度，拖拽换算才有意义；窗口外的时段不画也不提示，直接不占高度。
-         * 跨夜的日程按「到当天结束」计，避免 end < start 把窗口算成负数。
+         * 周视图不画满 24 小时：每小时只有十几像素时，半小时的会议挤成一条线。
+         * 取「最早开始 → 最晚结束」，前后各留 30 分钟，至少 6 小时，对齐整点。
+         * 窗口内为线性刻度，拖拽换算才成立。跨夜日程按「到当天结束」计，避免 end < start 算出负数。
          */
         function timeWindowOf(events, padMinutes = 30, minHours = 6) {
             let from = Infinity;
@@ -907,9 +1005,8 @@ let calendarHostContext;
             return events.filter((event) => event.uid !== uid && overlaps(event, pseudo));
         }
         /**
-         * 指针 x（视口坐标）→ 列号。坐标必须来自 getBoundingClientRect ——
-         * offsetLeft 相对 offsetParent，在浮层面板里与 clientX 坐标系不一致。
-         * 找不到列就返回 undefined，调用方按「不换天」处理。
+         * 指针 x（视口坐标）→ 列号。必须用 getBoundingClientRect：offsetLeft 相对 offsetParent，
+         * 在浮层面板里与 clientX 不同坐标系。找不到列返回 undefined，调用方按不换天处理。
          */
         function columnIndexFromRects(clientX, rects) {
             for (const rect of rects) {
@@ -922,7 +1019,7 @@ let calendarHostContext;
         function isRecurring(event) {
             return event.rrule !== undefined || event.isOccurrence === true || event.seriesStart !== undefined;
         }
-        // ───────────────────────────── 小部件 ─────────────────────────────
+        // 小部件
         /** 事件属于哪一类：影响左侧色条（全天绿 / 重复黄 / 普通蓝）。 */
         function eventClass(event) {
             return event.allDay ? "allday" : (event.rrule || event.isOccurrence ? "recurring" : "");
@@ -961,11 +1058,9 @@ let calendarHostContext;
         }
         /**
          * 月视图：6×7 网格铺满可用高度。
-         *
-         * 每格显示几条不是写死的：先量网格的实测高度，算出「一格能放几行芯片」，
-         * 放不下的收成「+N」。窗口矮就自动少显示一条，绝不让格子撑高页面、也不出现滚动条。
+         * 每格显示几条由实测网格高度算出，放不下的收成「+N」，不撑高页面、不出滚动条。
          */
-        /** 月视图一格：芯片占多高（芯片 15 + 间距 2），以及日号行 + 内边距占多少。 */
+        /** 月视图一格：芯片高（15 + 间距 2）与日号行 + 内边距占的高度。 */
         const MONTH_CHIP_STEP = 17;
         const MONTH_CELL_CHROME = 34;
         function MonthView(props) {
@@ -975,7 +1070,7 @@ let calendarHostContext;
             const gridRef = useRef(null);
             const gridHeight = useElementHeight(gridRef, 0, "month-grid");
             // 一格能塞几条：行高 = 网格高 / 6，扣掉日号行与内边距，再除以「芯片 + 间距」。
-            // 多出来的不硬塞，改成「+N」——塞进去也是被裁掉，用户以为那天就这些事。
+            // 放不下的收进「+N」，不硬塞进格子。
             const rowsFit = gridHeight <= 0 ? 3 : Math.max(1, Math.floor((gridHeight / 6 - MONTH_CELL_CHROME) / MONTH_CHIP_STEP));
             const byDay = {};
             for (const event of events) {
@@ -1033,25 +1128,22 @@ let calendarHostContext;
             ]);
         }
         /**
-         * 周视图：7 列 × 「本周日程实际占用时段」的时间轴。除了画日程，它还负责改期：
-         *   · 拖动事件块：上下改时间、左右换天（15 分钟吸附）；
-         *   · 拖块底部 6px 的缩放手柄：只改时长；
-         *   · 拖动中画幽灵落点，与已有日程重叠时描成黄色（允许重叠，只是提醒）；
-         *   · 拖到容器上下边缘自动滚动（浮层面板那种会滚的容器才有用，一屏布局里是空转）；
-         *   · 键盘：Tab 聚焦后 ↑/↓ 挪 15 分钟、Shift+↑/↓ 挪 1 小时、←/→ 挪一天、Enter 打开详情、拖动中 Esc 取消。
-         * 几何计算全在纯函数里（slotFromDrag / resizeSlot / moveSlot / columnIndexFromRects），这里只做指针与 DOM 的事。
+         * 周视图：7 列 × 本周日程实际占用时段的时间轴，同时负责改期。
+         *   拖动事件块：上下改时间、左右换天（15 分钟吸附）；
+         *   拖底部 6px 手柄：只改时长；
+         *   拖动中画幽灵落点，与已有日程重叠时描黄（允许重叠）；
+         *   拖到容器上下边缘自动滚动（仅可滚容器有效）；
+         *   键盘：↑/↓ 挪 15 分钟、Shift+↑/↓ 挪 1 小时、←/→ 挪一天、Enter 打开详情、Esc 取消。
+         * 几何计算在纯函数里（slotFromDrag / resizeSlot / moveSlot / columnIndexFromRects）。
          *
-         * 时间轴不开满 24 小时：窗口取 timeWindowOf() 的结果，高度 = 周网格实测 - DAY_HEAD_H，
-         * 窗口外不再挂提示带（用户明确要求去掉，省下来的高度全给日程）。
+         * 时间轴不铺满 24 小时：窗口取 timeWindowOf()，高度 = 周网格实测 - DAY_HEAD_H，窗口外不挂提示带。
          *
-         * 两个坑写在这里免得后人再踩：
-         *   1. 列判定必须用 getBoundingClientRect：offsetLeft 是相对 offsetParent 的，浮层面板里与 clientX 不同坐标系；
-         *   2. window 监听器只在挂载时注册一次，通过 impl ref 调用「最新实现」；
-         *      按渲染闭包挂/摘会出现「摘不掉 → 卸载后 pointerup 替用户提交一次改期」。
+         * 列判定必须用 getBoundingClientRect：offsetLeft 相对 offsetParent，
+         * 浮层面板里与 clientX 不同坐标系。
          */
         /**
-         * 周视图表头高度：JS 与 CSS 共用（.dshc-dayhead 也是 26px）。
-         * 时间轴高度 = 周网格实测高度 - 它，两个地方写死同一个数才不会差出一根滚动条。
+         * 周视图表头高度：JS 与 CSS 共用（.dshc-dayhead 同为 26px）。
+         * 时间轴高度 = 周网格实测高度 - 它，两处必须同值。
          */
         const DAY_HEAD_H = 26;
         const FALLBACK_TIMELINE_H = 320;
@@ -1067,8 +1159,7 @@ let calendarHostContext;
             const allDay = sortForDisplay(events.filter((e) => e.allDay));
             const timed = events.filter((e) => !e.allDay);
             /**
-             * 时间轴 = 这一周日程实际占用的时段（见 timeWindowOf），高度取容器的实测值。
-             * 于是「24 小时铺满一屏、不等高压缩、不滚动」三件事同时成立。
+             * 时间轴 = 本周日程实际占用的时段（见 timeWindowOf），高度取容器实测值。
              */
             const scroller = useRef(null);
             const window_ = timeWindowOf(timed);
@@ -1077,7 +1168,7 @@ let calendarHostContext;
             const weekHeight = useElementHeight(scroller, 0, "week-grid");
             const timelineHeight = weekHeight > 0 ? Math.max(80, weekHeight - DAY_HEAD_H) : FALLBACK_TIMELINE_H;
             const hourPx = Math.max(4, timelineHeight / ((window_.end - window_.start) / 60));
-            /** 刻度密度：每小时像素不够就隔几小时标一个，免得字叠字。 */
+            /** 刻度密度：每小时像素不足时隔几小时标一个，避免文字重叠。 */
             const labelStep = hourPx >= 22 ? 1 : hourPx >= 14 ? 2 : hourPx >= 9 ? 3 : 6;
             const offsetOf = (minutes) => Math.max(0, ((minutes - window_.start) / 60) * hourPx);
             /** 拖拽位置放 ref：每帧 setState 会让整棵树重渲染，拖动会顿。 */
@@ -1155,9 +1246,8 @@ let calendarHostContext;
                 setGhost({ uid: drag.uid, slot, conflicts: conflictsForSlot(events, slot, drag.uid).length });
             };
             /**
-             * 边缘自动滚动：用 rAF 持续滚，而不是「每次 pointermove 滚一小步」。
-             * 前者指针停在边缘不动也会继续滚（这才是「长会议不用先滚再拖」），
-             * 后者只在指针移动时滚，用户会觉得网格在滚、事件却不跟手。
+             * 边缘自动滚动走 rAF 持续滚，而不是随 pointermove 滚一小步：
+             * 前者指针停在边缘不动也继续滚，后者只在指针移动时滚，事件块跟不上网格。
              */
             const autoScroll = useRef({ raf: 0, x: 0, y: 0 });
             const stopAutoScroll = () => {
@@ -1206,7 +1296,7 @@ let calendarHostContext;
                 if (drag === null)
                     return;
                 // 鼠标在窗口外松开时浏览器可能不派发 pointerup：按键已经松了就当作取消，
-                // 免得「卡住的拖拽」在回到窗口后被下一次移动继续更新、下一次松开就替用户提交。
+                // 卡住的拖拽在指针回到窗口后不再更新，松开也不会提交。
                 if (drag.moved === true && pointerEvent.buttons === 0) {
                     stopDrag(false);
                     return;
@@ -1215,9 +1305,8 @@ let calendarHostContext;
                 ensureAutoScroll(pointerEvent);
             };
             /**
-             * window 监听器只在挂载时注册一次，通过 impl ref 调「最新实现」。
-             * 这样既不会因为渲染闭包更换而摘不掉（那会导致卸载后 pointerup 真的发一次 update），
-             * 也不会读到过期的 state。
+             * window 监听器只在挂载时注册一次，通过 impl ref 调「最新实现」：
+             * 按渲染闭包挂/摘会摘不掉，卸载后 pointerup 仍会发一次 update，也会读到过期 state。
              */
             const impl = useRef({});
             impl.current = { stopDrag, updatePreview, isOwnPointer };
@@ -1445,7 +1534,7 @@ let calendarHostContext;
                 ]);
             }));
         }
-        // ───────────────────────────── 悬浮面板的样式补充 ─────────────────────────────
+        // 悬浮面板的样式补充
         const CSS_EXTRA = [
             ".dshc-fab{position:fixed;right:18px;bottom:88px;z-index:55;width:38px;height:38px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#111);box-shadow:var(--dsw-elevation-prominent,0 6px 18px rgba(0,0,0,.18));cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.62;transition:opacity .15s,transform .15s}",
             ".dshc-fab:hover{opacity:1;transform:translateY(-1px)}",
@@ -1457,7 +1546,7 @@ let calendarHostContext;
             ".dshc-steps ol{margin:6px 0 0;padding-left:18px;line-height:1.55}",
             ".dshc-link{color:var(--dsw-alias-state-business-primary,#2563eb);text-decoration:none}",
         ].join("");
-        // ───────────────────────────── 数据 ─────────────────────────────
+        // 数据
         /** 去掉毫秒：后端的 assertIsoTime 只认秒级 ISO，浏览器 toISOString 带 .000Z。 */
         function isoOf(date) { return date.toISOString().replace(/\.\d{3}Z$/, "Z"); }
         function rangeOf(view, anchor) {
@@ -1474,30 +1563,22 @@ let calendarHostContext;
             return { start: isoOf(from), end: isoOf(addDays(from, 42)) };
         }
         /**
-         * 跨会话缓存。从别的会话点回日历页，React 会把整棵树卸载再重建，
-         * 组件内的 ref / state 跟着一起没 —— 所以「上次拿到的数据」必须放在模块作用域，
-         * 否则每次回来都是一次空白 → 骨架屏 → 内容的三段闪（用户明确说体验割裂）。
+         * 跨会话缓存。从别的会话点回日历页时 React 会卸载重建整棵树，
+         * 组件内 ref / state 一起丢，所以「上次拿到的数据」放在模块作用域。
          *
-         * 规则：
-         *   · 有缓存就先拿它渲染 —— 第一帧就是完整内容，不出骨架；
-         *   · 缓存新鲜（TTL 内）就不再发请求，进出页面、切视图都算命中；
-         *   · 缓存过期：先显示旧的，再在后台悄悄刷新，成功后原地替换，全程不出骨架；
-         *   · 点「刷新」（reloadToken 变）一定重新拉，不受 TTL 限制。
+         * 有缓存先渲染，第一帧即完整内容；TTL 内不再请求；
+         * 过期时先显示旧的，后台刷新后原地替换；点刷新（reloadToken 变）一定重拉。
          */
         const DATA_CACHE = new Map();
         const DATA_TTL_MS = 60000;
         const DATA_CACHE_LIMIT = 8;
         /**
          * 数据版本戳：设置页导入 ICS 成功后调用 invalidateCalendarData()，
-         * 侧栏下次进来（或切视图）会跳过缓存命中、在后台拉一次新的；
-         * 首帧仍然显示缓存内容，所以不会闪回骨架屏。
+         * 侧栏下次进来或切视图时跳过缓存命中，后台拉新数据，首帧仍显示缓存。
          *
-         * 只改版本号不够：日历 UI 挂在三个互相独立的组件树里（主页 main 槽、
-         * 对话页悬浮面板、设置页），它们共享这份缓存，但各拿各的 reloadToken。
-         * 版本号变了别的实例也不会自己重拉 —— 它们的 effect 依赖没动，
-         * 于是继续命中「旧版本 + TTL 未过期」的条目，屏幕上就是旧数据。
-         * 所以这里同时广播：让所有已挂载的实例立刻重拉，
-         * 否则「配置成功了但页面没变化」只能靠用户手动刷新才看得见。
+         * 日历 UI 挂在三个独立组件树里（主页 main 槽、对话页悬浮面板、设置页），
+         * 共享缓存但各拿各的 reloadToken，只改版本号不会让其他实例重拉。
+         * 因此同时广播，让已挂载实例立刻重拉。
          */
         let DATA_VERSION = 0;
         const DATA_LISTENERS = new Set();
@@ -1516,15 +1597,11 @@ let calendarHostContext;
         /** 连接信息同理：它是另一个请求，回来时 `configured === null` 也会走骨架屏。 */
         const CONN_CACHE = { value: null, at: 0 };
         /**
-         * 拉一个时间窗的事件。
-         *
-         * 曾经「没命中就退到最近一次拿到的窗口」，结果切视图时先把上一个视图的日程画出来，
-         * 等请求回来再整片替换 —— 用户看到的就是「旧日程一闪」。现在只认精确命中。
-         * 关键约束：**切视图的第一帧就必须是那个窗口的数据**，不能先用上一份顶着。
-         * 做法是把 cache 读取放进 render（同步），而不是等 useEffect 再 setState。
-         *   · 精确缓存命中 → 首帧直接画缓存；过期也只是「后台刷新」，同一窗口数据不整片闪；
-         *   · 没有缓存       → 显示加载动画，不拿别的窗口的数据冒充；
-         *   · 点刷新         → 保留当前窗口数据，只显示一条细进度线，回来后原地替换。
+         * 拉一个时间窗的事件。只认精确命中的缓存：切视图时用别的窗口数据顶替，
+         * 用户会看到旧日程闪一下。因此 cache 读取放在 render 里同步完成，不等 useEffect。
+         *   命中 → 首帧画缓存，过期时后台刷新，同一窗口不整片闪；
+         *   未命中 → 显示加载动画；
+         *   点刷新 → 保留当前数据，只显示细进度线，返回后原地替换。
          */
         function useCalendarData(range, reloadToken) {
             const key = range.start + "|" + range.end;
@@ -1576,11 +1653,8 @@ let calendarHostContext;
             return display;
         }
         /**
-         * 量一个元素的高度（ResizeObserver）。
-         *
-         * 周视图的时间轴是从「可用高度」反算的，不能再用 100dvh 猜 —— 猜出来永远差一点，
-         * 差一点就是一个滚动条。没有 ResizeObserver（老宿主 / 冒烟测试）时返回 0，
-         * 调用方用 fallback 顶上。
+         * 量元素高度（ResizeObserver）。周视图时间轴按可用高度反算，不用 100dvh 估算。
+         * 没有 ResizeObserver（老宿主 / 冒烟测试）时返回 0，调用方用 fallback。
          */
         function useElementHeight(ref, fallback, cacheKey) {
             // 切视图会重建 DOM：先拿上一次的实测值垫着，第一帧就不会「先缩一下再弹回来」。
@@ -1608,7 +1682,7 @@ let calendarHostContext;
         }
         /** 量过的高度按 key 记住（见 useElementHeight 的 cacheKey）。 */
         const HEIGHT_CACHE = new Map();
-        // ───────────────────────────── 表单 ─────────────────────────────
+        // 表单
         /** 事件 → 表单草稿（日期与时间都按浏览器本地时区拆开给 datetime-local 用）。 */
         function draftOfEvent(event) {
             const allDay = event.allDay === true;
@@ -1778,7 +1852,7 @@ let calendarHostContext;
                 footer: footer
             });
         }
-        // ───────────────────────────── 详情抽屉 ─────────────────────────────
+        // 详情抽屉
         function EventDrawer(props) {
             const { event, onClose, onEdit, onDelete, busy, confirmDelete, setConfirmDelete, events, readOnly } = props;
             const [copied, setCopied] = useState(false);
@@ -1819,7 +1893,7 @@ let calendarHostContext;
                 ])
             ]);
         }
-        // ───────────────────────────── 连接设置 ─────────────────────────────
+        // 连接设置
         /** 每个服务商要填哪些格子。顺序就是表单里的顺序。 */
         const PROVIDER_FIELDS = {
             google: ["calendarId", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl"],
@@ -1877,8 +1951,8 @@ let calendarHostContext;
             return account === "" ? provider : provider + " · " + account;
         }
         /**
-         * 连接设置表单：填 → 测试 → 保存。保存前服务端还会再测一次（test:true），
-         * 所以「保存成功」等价于「这套凭据刚才真的连上了」。
+         * 连接设置表单：填 → 测试 → 保存。保存前服务端会再测一次（test:true），
+         * 「保存成功」即「这套凭据刚才连上了」。
          */
         function ConnectionForm(props) {
             const { connection, onClose, onSaved } = props;
@@ -2050,12 +2124,10 @@ let calendarHostContext;
             ]);
             return h(Dlg, { open: true, onClose, title: t("conn.title"), children: body });
         }
-        // ───────────────────────────── 主面板 ─────────────────────────────
-        // ───────────────────────────── 浮层 Esc 的模块级栈 ─────────────────────────────
-        // 一个页面可能同时有多个 CalendarPanel（设置页一节 + 对话页悬浮面板）。如果各自往
-        // document 挂捕获监听，stopPropagation 拦不住同阶段的其他监听 —— 一次 Esc 会连关
-        // 两层；用全局 querySelector 兜底也会被另一个面板的浮层误触发。这里共用一个捕获
-        // 监听，按「焦点所在 root / 最近打开的层」只关一层。
+        // 主面板
+        // 浮层 Esc 的模块级栈：一个页面可能同时有多个 CalendarPanel。各自往 document 挂
+        // 捕获监听时 stopPropagation 拦不住同阶段的其他监听，一次 Esc 会连关两层。
+        // 这里共用一个捕获监听，按「焦点所在 root / 最近打开的层」只关一层。
         const LAYER_ESCAPE_STACK = [];
         let layerEscapeListener = null;
         function panelRootOf(node) {
@@ -2359,10 +2431,9 @@ let calendarHostContext;
                 h("p", { key: "intro", className: "dshc-sub" }, t("ics.intro")),
                 h("h4", { key: "importh", className: "dshc-subtitle" }, t("import.section")),
                 h("p", { key: "importhint", className: "dshc-sub" }, t("import.intro")),
-                // 原生 input[type=file] 自带的按钮与「未选择文件」文案跟随浏览器语言（英文环境就是英文），
-                // 所以把它藏起来，用我们自己的按钮触发，选中后在这里显示文件名。
-                // 隐藏用行内 style：下面的 `.dshc-import input[type=file]` 规则带元素选择器，
-                // 权重高于 `.dshc-file-native`，只靠 class 藏不住（会看到英文的 Choose File）。
+                // 原生 input[type=file] 的按钮和「未选择文件」文案跟随浏览器语言，
+                // 因此藏起原生控件，用自己的按钮触发，选中后在这里显示文件名。
+                // 隐藏用行内 style：`.dshc-import input[type=file]` 带元素选择器，权重高于 class。
                 h("div", { key: "file", className: "dshc-file" }, [
                     h(Btn, { key: "pick", disabled: busy, onClick: () => { const node = fileInput.current; if (node !== null)
                             node.click(); } }, t("import.file")),
@@ -2416,10 +2487,8 @@ let calendarHostContext;
             ]);
         }
         /**
-         * 加载指示：三点环绕 + 一行说明。
-         *
-         * 不用网格骨架 —— 那看起来像「月视图没渲染出来」，还把内容顶在上面。
-         * 这里是一个独立的、居中的小动画，深色/浅色都走宿主令牌；减少动效偏好时降速。
+         * 加载指示：三点环绕 + 一行说明，独立居中、不占内容高度，颜色走宿主令牌。
+         * 不用网格骨架，那看起来像月视图没渲染出来。
          */
         function CalendarLoader() {
             return h("div", { className: "dshc-loading", role: "status", "aria-live": "polite" }, [
@@ -2430,11 +2499,9 @@ let calendarHostContext;
             ]);
         }
         /**
-         * 设置页的「日历来源」：一个按钮切换，文字直接写明切到哪。
-         *
-         * 不做「先预检再执行」两步 —— 用户看不出「迁移到哪里」，还要多点一次。
-         * 切换的语义是**复制 + 切换**（只复制、不删源），所以不需要额外的确认弹窗；
-         * 但有一条硬规则：任何一条复制失败就不切，避免「以为搬完了其实没搬」。
+         * 设置页的「日历来源」：一个按钮切换，文字写明切到哪。
+         * 语义是复制 + 切换（只复制、不删源），不需要确认弹窗；
+         * 任何一条复制失败就不切。
          */
         function SourceSettings() {
             const [conn, setConn] = useState(CONN_CACHE.value);
@@ -2495,14 +2562,12 @@ let calendarHostContext;
          * 设置页里的经期记录。只写本机 localStorage（见 cycle.js 的隐私约束），
          * 保存后通过模块级订阅通知已挂载的日历重画，未挂载的下次进来读新值。
          *
-         * 没有「启用」开关：填了开始日期就展示，想关掉就点「清除记录」。
-         * 反馈做在按钮自己身上（2 秒内显示「已保存」/「已清除」并锁住），不再单独占一行文字 ——
-         * 那行字留在页面上会过期，用户过一会儿再看就分不清是刚做的还是旧状态。
+         * 没有启用开关：填了开始日期就展示，关掉用「清除记录」。
+         * 反馈做在按钮上（2 秒内显示「已保存」/「已清除」并锁住），不额外占一行文字。
          */
         /**
-         * 清除后（以及从没记录过）界面上不留上次的数字，让「没记录」看起来就是空的。
-         * 注意：空输入框必须靠 cycle.js 的 clampInt 回落到默认 28 / 5，**不能**当 0 夹到下限，
-         * 否则用户看到「默认 28 / 5」、点保存却变成「15 / 1」（真被这么坑过一次）。
+         * 清除后不留上次的数字，空就显示为空。
+         * 空输入必须靠 cycle.js 的 clampInt 回落到默认 28 / 5，不能当 0 夹到下限。
          */
         const EMPTY_CYCLE_DRAFT = { lastStart: "", cycleLength: "", periodLength: "" };
         function CycleSettings() {
@@ -2560,10 +2625,9 @@ let calendarHostContext;
             ]);
         }
         /**
-         * 页脚的数据源标签：只读，**不可点**。
-         *
-         * 页面永远只显示一个数据源，这里只说明「现在看的是哪一份」；
-         * 切换数据源要迁移、可能丢数据，属于设置页里的一次性流程，不该在页脚一键可达。
+         * 页脚的数据源标签：只读，不可点击。
+         * 页面只显示一个数据源，这里只说明当前看的是哪一份；切换要迁移、可能丢数据，
+         * 属于设置页的一次性流程。
          */
         function sourceLabel(conn) {
             if (conn === null || conn === undefined)
@@ -2586,10 +2650,8 @@ let calendarHostContext;
             return t("source.caldav");
         }
         /**
-         * 首启页：`backend` 还没选过时占住视图区。
-         *
-         * 只有两个终态 —— 使用本地日历，或走连接向导接远程。没有「先看看」「稍后再说」：
-         * 任何中间态都会让用户以为「日程可以存在两处」，与互斥单数据源的模型相悖。
+         * 首启页：`backend` 未选择时占住视图区。
+         * 只有两个终态：本地日历或连接向导接远程。没有中间态，否则用户会以为日程能存在两处。
          */
         function SourcePicker(props) {
             const busy = props.busy === true;
@@ -2622,15 +2684,19 @@ let calendarHostContext;
             const [formError, setFormError] = useState(null);
             const [banner, setBanner] = useState(null);
             const [confirmDelete, setConfirmDelete] = useState(false);
-            // 连接信息也从跨会话缓存起手：回来时 `configured === null` 会直接走骨架屏，
-            // 那正是「每次进页面都闪一下」的第二个来源。
-            // 本地日历没有 CalDAV 凭据，后端仍会回 configured:false。初始值必须与
-            // fetch 后的判定一致：缓存命中时不重算，漏判本地日历会误显示未配置页。
+            // 连接信息也从跨会话缓存起手，否则回来时 `configured === null` 走骨架屏。
+            // 本地日历没有 CalDAV 凭据，后端会回 configured:false；初始值须与 fetch 后的判定一致。
             const [configured, setConfigured] = useState(() => (CONN_CACHE.value === null
                 ? null
                 : (CONN_CACHE.value.backend === "local" || CONN_CACHE.value.configured !== false)));
             const [conn, setConn] = useState(() => CONN_CACHE.value);
             const [connOpen, setConnOpen] = useState(false);
+            // 邮件日程：清单弹窗、角标计数、以及悬浮窗提示条递进来的「打开」请求。
+            const [mailOpen, setMailOpen] = useState(false);
+            const [mailCounts, setMailCounts] = useState(null);
+            const mailRequest = props.mailRequest;
+            // 悬浮窗提示条点「创建日程」后，Launcher 会把候选递进来：面板负责打开预填表单。
+            const draftRequest = props.draftRequest;
             const [sourceBusy, setSourceBusy] = useState(false);
             // 首启页的选择失败必须留在页面上：只闪 2.2 秒的提示条会被当成"点了没反应"。
             const [sourceError, setSourceError] = useState(null);
@@ -2638,7 +2704,7 @@ let calendarHostContext;
             // 经期记录在设置页维护；模块级订阅让设置页一保存，已挂载的日历立刻重画。
             const [cycle, setCycle] = useState(getCycleConfig);
             useEffect(() => subscribeCycle(setCycle), []);
-            const layerOpen = draft !== null || selected !== null || connOpen === true;
+            const layerOpen = draft !== null || selected !== null || connOpen === true || mailOpen === true;
             const rootRef = useRef(null);
             /** 让 Launcher 知道本面板里有没有浮层：宿主 Portal 的 Esc 不能被面板级监听抢走。 */
             useEffect(() => {
@@ -2658,14 +2724,17 @@ let calendarHostContext;
                     openKeys.push("draft");
                 if (connOpen === true)
                     openKeys.push("conn");
+                // 邮件清单是盖在日历上的对话框，进栈最晚，Esc 时第一个关掉。
+                if (mailOpen === true)
+                    openKeys.push("mail");
                 const kept = layerOrderRef.current.filter((key) => openKeys.indexOf(key) !== -1);
                 const added = openKeys.filter((key) => kept.indexOf(key) === -1);
                 layerOrderRef.current = kept.concat(added);
-            }, [draft, connOpen, selected]);
+            }, [draft, connOpen, selected, mailOpen]);
             /**
              * Esc 分层关闭：有浮层时只关最上面一层（表单/连接设置 > 详情抽屉）。
-             * 监听走模块级的层栈 —— 多个 CalendarPanel 并存时一次 Esc 只关一层；
-             * 焦点在上层宿主 Portal 里时直接让行，交给宿主自己的 Esc 语义。
+             * 监听走模块级层栈，多个 CalendarPanel 并存时一次 Esc 只关一层；
+             * 焦点在宿主 Portal 里时交给宿主处理。
              */
             useEffect(() => {
                 if (layerOpen !== true)
@@ -2682,13 +2751,15 @@ let calendarHostContext;
                     }
                     else if (top === "conn")
                         setConnOpen(false);
+                    else if (top === "mail")
+                        setMailOpen(false);
                     else if (top === "selected") {
                         setSelected(null);
                         setConfirmDelete(false);
                     }
                 };
                 return registerLayerEscape(root, closeTop);
-            }, [draft, selected, connOpen]);
+            }, [draft, selected, connOpen, mailOpen]);
             /** 乐观改期：uid → { start, end }。等服务器回读到同样的时间再撤掉，避免闪回。 */
             const [overrides, setOverrides] = useState({});
             const [undo, setUndo] = useState(null);
@@ -2721,11 +2792,38 @@ let calendarHostContext;
             const data = useCalendarData(range, reloadToken);
             const reload = () => setReloadToken((n) => n + 1);
             /**
-             * 数据失效广播：别的组件树改了数据源（保存 CalDAV、导入 ICS、切换后端），
-             * 这里立刻跟着重拉，不必等 60s TTL 过期或用户手动刷新。
-             * 只增 reloadToken 就够 —— 它同时驱动 useCalendarData 与连接信息两个 effect。
+             * 数据失效广播：别的组件树改了数据源（保存 CalDAV、导入 ICS、切换后端）后立刻重拉，
+             * 不等 TTL 过期或手动刷新。只增 reloadToken，它同时驱动 useCalendarData 与连接信息。
              */
             useEffect(() => subscribeDataRefresh(reload), []);
+            /**
+             * 邮件待办角标：订阅模块级共享状态，悬浮窗用同一份，不重复请求。
+             * 失败静默：邮件未配置不在日历上冒红条。
+             */
+            useEffect(() => {
+                const handle = (value) => {
+                    if (value !== null && value !== undefined && value.counts !== undefined)
+                        setMailCounts(value.counts);
+                };
+                return mailStatusSubscribe(handle, 20000);
+            }, []);
+            /** 悬浮窗提示条点「查看」时，Launcher 会递一个自增的 mailRequest 进来。 */
+            useEffect(() => {
+                if (typeof mailRequest === "number" && mailRequest > 0)
+                    setMailOpen(true);
+            }, [mailRequest]);
+            /** 悬浮窗清单里点「创建日程」：打开预填表单，用户核对后再保存。 */
+            useEffect(() => {
+                if (draftRequest === null || draftRequest === undefined)
+                    return;
+                const candidate = draftRequest.candidate;
+                if (candidate === null || candidate === undefined)
+                    return;
+                setMailOpen(false);
+                setFormError(null);
+                setSelected(null);
+                setDraft(mailCandidateToDraft(candidate));
+            }, [draftRequest]);
             /** 选「本地日历」：写进 settings 后立刻刷新。此刻本地是空的，没有数据要迁移。 */
             const chooseLocal = async () => {
                 setSourceBusy(true);
@@ -2758,17 +2856,13 @@ let calendarHostContext;
                 return override === undefined ? event : Object.assign({}, event, override);
             }), [events, overrides]);
             /**
-             * 页脚统计 = 当前视图里显示出来的日程数（含重复展开），翻到哪个月就数哪个月。
-             * 以前只数「今天之后还没过去」的，结果翻到过去的月份，屏幕上明明有 3 条日程，
-             * 页脚却写「0 个日程」——口径和看到的内容对不上。
+             * 页脚统计 = 当前视图显示的日程数（含重复展开），翻到哪个月数哪个月。
              */
             const shownEvents = visibleEvents;
             /**
              * 改期成功后把焦点还给同一个日程。
-             *
              * 位置必须在 const data = useCalendarData(...) 之后：依赖数组 [data.events] 在渲染期求值，
-             * 写在前面会 TDZ 抛错、面板每次渲染即崩（纯函数测试覆盖不到）。
-             * 只在「焦点还在面板里」时才回收，避免慢 reload 期间抢回用户已移走的焦点。
+             * 写在前面会 TDZ 抛错、每次渲染即崩（纯函数测试覆盖不到）。焦点已移出面板时不回收。
              */
             const focusUid = useRef(null);
             useEffect(() => {
@@ -2807,13 +2901,10 @@ let calendarHostContext;
                     return changed ? next : prev;
                 });
             }, [events]);
-            /** 乐观改期的落盘：先动画面、再发请求；失败就把覆盖撤掉并报错。 */
             /**
-             * 改期落盘：**按 uid 串行 + 合并**。
-             *
-             * 按住方向键会按 repeat 频率连发，直接并发发 PUT 的话：乱序可能让服务器停在中间某个时间、
-             * 而先发的那次失败会把后发那次的乐观位置一起回滚掉。这里同一 uid 只跑一个请求，
-             * 期间来的新落点合并成「最后一次」，跑完再接着发。
+             * 改期落盘：按 uid 串行 + 合并。按住方向键会按 repeat 频率连发，并发发 PUT
+             * 可能乱序停在中间时间，且先发那次失败会回滚掉后发的乐观位置。
+             * 同一 uid 只跑一个请求，期间的新落点合并为最后一次。失败时撤销乐观覆盖并报错。
              */
             const applyMove = (event, range) => {
                 const uid = event.uid;
@@ -2873,9 +2964,9 @@ let calendarHostContext;
             };
             /** 改期入口：重复日程先问一句（拖动会移动整个系列，这是语义雷区，不能悄悄做）。 */
             const reschedule = (event, range) => {
-                // 重复日程暂不支持拖动改期：CalDAV 里整个系列是一个对象，而 update 只能改 master 的
-                // DTSTART —— 把「这次实例的目标时间」发过去等于重锚系列起点（早于它的实例全丢、
-                // COUNT/UNTIL 语义被改，撤销也回不到原系列），必须先拦截。
+                // 重复日程暂不支持拖动改期：整个系列在 CalDAV 里是一个对象，
+                // update 只能改 master 的 DTSTART，等于重锚系列起点（早于它的实例丢失，
+                // COUNT/UNTIL 语义被改），必须先拦截。
                 if (isRecurring(event)) {
                     notify(t("move.recurringUnsupported"));
                     return;
@@ -2916,8 +3007,19 @@ let calendarHostContext;
                 setFormError(null);
                 try {
                     const fields = fieldsOfDraft(form);
-                    if (form.uid === undefined)
-                        await api("create", fields);
+                    if (form.uid === undefined) {
+                        const created = await api("create", fields);
+                        const createdUid = created !== null && created !== undefined && created.event ? created.event.uid : "";
+                        // 这条草稿来自邮件识别：建成之后才把候选标成 created，失败也不撤回日程。
+                        if (typeof form.mailTodoId === "string" && form.mailTodoId !== "" && typeof createdUid === "string" && createdUid !== "") {
+                            try {
+                                const marked = await mailApi("markCreated", { id: form.mailTodoId, calendarUid: createdUid });
+                                if (marked !== null && marked !== undefined && marked.counts !== undefined)
+                                    setMailCounts(marked.counts);
+                            }
+                            catch (error) { /* 标记失败只影响清单状态，日程已经建好了 */ }
+                        }
+                    }
                     else
                         await api("update", Object.assign({ uid: form.uid }, fields));
                     setDraft(null);
@@ -2960,12 +3062,13 @@ let calendarHostContext;
                 h(Btn, { key: "today", onClick: () => setAnchor(new Date()) }, t("action.today")),
                 h(Btn, { key: "next", onClick: () => step(1), "aria-label": t("action.next") }, "\u203a"),
                 h(Btn, { key: "reload", onClick: reload }, t("action.refresh")),
+                // 浮层只用于查看现有日程，邮件日程入口留在侧栏。
                 h(Btn, { key: "new", variant: "primary", onClick: () => setDraft(draftAt(anchor)) }, t("action.new"))
             ])) : h('div',{className:'calendar-toolbar'},
  h('div',{className:'calendar-period'},h(W.IconButton,{icon:'left',label:t('action.prev'),onClick:()=>step(-1)}),h('strong',null,title),h(W.IconButton,{icon:'right',label:t('action.next'),onClick:()=>step(1)}),h(W.Button,{onClick:()=>setAnchor(new Date())},t('action.today'))),
  h('div',{className:'calendar-view-controls',role:'group','aria-label':calendarText('日历视图','Calendar view')},VIEWS.map(name=>h(W.Button,{key:name,'aria-pressed':view === name,onClick:()=>{setView(name);storeView(name);}},t('view.'+name))),h(W.IconButton,{icon:'refresh',label:t('action.refresh'),onClick:reload})));;
-            // 浮层只用来快速看一眼日程：数据源选择、连接配置、找空闲一律回侧栏做，
-            // 免得同一个功能在浮层和主页面用两个名字、两套流程。
+            // 浮层只用于查看现有日程：数据源选择、连接配置、找空闲一律回侧栏，
+            // 避免同一功能在浮层与主页出现两套名字和流程。
             const compactHint = () => h("div", { className: "dshc-empty" }, [h("p", null, t("panel.compactHint"))]);
             const body = () => {
                 // 首启：还没选过数据源 —— 先让用户决定日程存在哪。不显示空日历，也没有示例模式。
@@ -3019,10 +3122,9 @@ let calendarHostContext;
                     // 工作台里不要外面那层 div：一屏布局是 flex 链，多一层普通块会把工具条变成可压缩的项。
                     compact === true ? toolbar : h(React.Fragment, null, toolbar),
                     data.refreshing === true ? h("div", { key: "refresh", className: "dshc-refresh", role: "status", "aria-label": t("state.refreshing") }, h("span", { key: "bar" })) : null,
-                    availabilityOpen ? h(AvailabilityPanel,{key:'availability',anchor,onBusy:setAvailabilityBusy,onClose:()=>setAvailabilityOpen(false),onChoose:slot=>{setAvailabilityOpen(false);setAnchor(new Date(slot.start));setFormError(null);setDraft({...draftOfEvent({start:slot.start,end:slot.end,allDay:false}),uid:undefined});}}) : null,
-                    // 空闲时段与月/周/议程互斥：两者平级时，视图的 flex:1 会把面板挤成一小块，
-                    // 面板自己的候选列表也被压到只剩两行。打开面板时直接不渲染视图。
-                    availabilityOpen ? null : body(),
+                    body(),
+                    // 找空闲是弹窗：日历经让在下面当参照，选中的时段直接填进新建表单。
+                    availabilityOpen ? h(Dlg,{key:'availability',open:true,onClose:()=>setAvailabilityOpen(false),title:calendarText('找空闲时段','Find available time'),size:'wide',children:h(AvailabilityPanel,{embedded:true,anchor,onBusy:setAvailabilityBusy,onClose:()=>setAvailabilityOpen(false),onChoose:slot=>{setAvailabilityOpen(false);setAnchor(new Date(slot.start));setFormError(null);setDraft({...draftOfEvent({start:slot.start,end:slot.end,allDay:false}),uid:undefined});}})}):null,
                     h("div", { className: "dshc-footer" }, [
                         // 左边：周视图的拖拽提示。和右边的账号信息同一行，不要分割线。
                         view === "week"
@@ -3067,6 +3169,20 @@ let calendarHostContext;
                 draft !== null
                     ? h(EventForm, { draft, events, busy, error: formError, onCancel: () => { setDraft(null); setFormError(null); }, onSubmit: submit })
                     : null,
+                mailOpen === true
+                    ? h(MailTodoDialog, {
+                        key: "mail",
+                        onClose: () => setMailOpen(false),
+                        onCounts: setMailCounts,
+                        onPick: (candidate) => {
+                            // 一键创建 = 打开预填表单；用户核对后保存，才真正写进日历。
+                            setMailOpen(false);
+                            setFormError(null);
+                            setSelected(null);
+                            setDraft(mailCandidateToDraft(candidate));
+                        }
+                    })
+                    : null,
                 connOpen === true
                     ? h(ConnectionForm, {
                         connection: conn,
@@ -3086,6 +3202,7 @@ let calendarHostContext;
             ]);
 if(compact) return content;
 return h(W.Page,{workbench:props.workbench===true,title:t('section.title'),subtitle:h('span',{className:'dshc-page-subtitle'},[t('top.subtitle'),h('a',{key:'star',className:'dshc-star',href:STAR_URL,target:'_blank',rel:'noreferrer'},t('top.star'))]),className:'calendar-workbench',actions:h(React.Fragment,null,
+ h(W.Button,{onClick:()=>setMailOpen(true)},mailToolbarLabel(mailCounts)),
  h(W.Button,{icon:'link',disabled:configured===null,onClick:()=>setConnOpen(true)},calendarText('日历连接','Calendar connection')),
  h(W.Button,{disabled:configured!==true,onClick:()=>setAvailabilityOpen(v=>!v)},calendarText('找空闲时段','Find available time')),
  h(W.Button,{variant:'primary',disabled:configured!==true,title:configured!==true?calendarText('请先连接日历','Connect a calendar first'):undefined,onClick:()=>setDraft(draftAt(anchor))},t('action.new')))},h('style',null,CALENDAR_WORKBENCH_CSS),content);
@@ -3163,6 +3280,7 @@ return h(W.Page,{workbench:props.workbench===true,title:t('section.title'),subti
             return h(W.Page, { title: t('section.title'), subtitle: t('section.settingsSubtitle'), className: 'calendar-settings' },
                 h("div", { className: "dshc-settings", key: "settings" }, [
                     h(SourceSettings, { key: "source" }),
+                    h(MailSettingsCard, { key: "mail" }),
                     h(CycleSettings, { key: "cycle" }),
                     h(IcsImportPanel, {
                         key: "ics",
@@ -3181,7 +3299,34 @@ const [activePanel,setActivePanel]=useState(null);
 useEffect(()=>{let layout;try{layout=calendarHostContext?.get?.('layout') || calendarHostContext?.layout;}catch{}if(!layout?.panelInfo)return;const update=()=>setActivePanel(layout.panelInfo.getSnapshot().activePanelId);update();return layout.panelInfo.subscribe(update);},[]);
             useUILanguage();
             const [open, setOpen] = useState(false);
+            // 「查看待办」只弹待确认清单，不展开日历；要建日程时再把候选递进浮层表单。
+            const [reviewOpen, setReviewOpen] = useState(false);
+            const [draftRequest, setDraftRequest] = useState(null);
             const [layerOpen, setLayerOpen] = useState(false);
+            // 邮件：有新识别结果时在按钮上打角标，并在按钮上方弹一条轻提示。
+            const [mailNew, setMailNew] = useState(0);
+            const [mailToast, setMailToast] = useState(0);
+            const [mailRequest, setMailRequest] = useState(0);
+            const mailSeen = useRef(0);
+            const mailFirst = useRef(true);
+            useEffect(() => {
+                const handle = (value) => {
+                    if (value === null || value === undefined || value.counts === undefined)
+                        return;
+                    const fresh = typeof value.counts.new === "number" ? value.counts.new : 0;
+                    setMailNew(fresh);
+                    // 第一次只记基线：装上插件那一刻就把历史待办弹成提示，是骚扰不是提醒。
+                    if (mailFirst.current === true) {
+                        mailFirst.current = false;
+                        mailSeen.current = fresh;
+                        return;
+                    }
+                    if (fresh > mailSeen.current)
+                        setMailToast(fresh);
+                    mailSeen.current = fresh;
+                };
+                return mailStatusSubscribe(handle, 15000);
+            }, []);
             useEffect(() => {
                 if (open !== true)
                     return () => { };
@@ -3208,11 +3353,33 @@ return h("div", null, [
                     title: t("nav.title"),
                     "aria-label": t("nav.title"),
                     onClick: () => setOpen((value) => !value)
-                }, calendarIcon),
-                open === true ? h("div", { className: "dshc-float" }, h(CalendarPanel, { compact: true, onLayerChange: setLayerOpen })) : null
+                }, mailNew > 0
+                    ? [calendarIcon, h("span", { key: "badge", className: "dshc-fab-badge" }, mailNew > 99 ? "99+" : String(mailNew))]
+                    : calendarIcon),
+                open !== true && mailToast > 0
+                    ? h(MailArrivalToast, {
+                        key: "mailToast",
+                        count: mailToast,
+                        onClose: () => setMailToast(0),
+                        onOpen: () => { setMailToast(0); setReviewOpen(true); }
+                    })
+                    : null,
+                open === true ? h("div", { className: "dshc-float" }, h(CalendarPanel, { compact: true, onLayerChange: setLayerOpen, mailRequest: mailRequest, draftRequest: draftRequest })) : null,
+                reviewOpen === true
+                    ? h(MailTodoDialog, {
+                        key: "quick-review",
+                        onClose: () => setReviewOpen(false),
+                        onPick: (candidate) => {
+                            // 只有真要建日程时才打开浮层，让用户核对再保存。
+                            setReviewOpen(false);
+                            setDraftRequest({ seq: Date.now(), candidate });
+                            setOpen(true);
+                        }
+                    })
+                    : null
             ]);
         }
-        // ───────────────────────────── 挂载 ─────────────────────────────
+        // 挂载
         const inject = ["slots", "locale"];
         function apply(ctx) {
 calendarHostContext=ctx;W.register(ctx,{id:'dsh-calendar-pro.workbench',label:()=>t('nav.title'),icon:'calendar',component:CalendarSection,order:58});
@@ -3230,7 +3397,7 @@ calendarHostContext=ctx;W.register(ctx,{id:'dsh-calendar-pro.workbench',label:()
                     const style = document.createElement("style");
                     style.dataset.plugin = "dsh-calendar-pro";
                     style.dataset.pluginCss = id;
-                    style.textContent = CSS + CSS_EXTRA + ".dshc-import{margin:12px 0;padding:14px;border:1px solid var(--dsw-alias-border-l2,#d5d9df);border-radius:12px;min-width:0}.dshc-import h3{margin:0 0 8px}.dshc-import label{display:block;font-size:12px;margin:10px 0}.dshc-import input[type=file]:not(.dshc-file-native),.dshc-import textarea,.dshc-import select{display:block;box-sizing:border-box;width:100%;max-width:100%;margin-top:5px;border:1px solid var(--dsw-alias-border-l2,#ccc);border-radius:8px;padding:7px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff)}.dshc-import textarea{resize:vertical;font:12px/1.5 monospace}.dshc-import-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.dshc-import-rows{max-height:480px;overflow:auto}.dshc-import-row{padding:10px 4px;border-bottom:1px solid var(--dsw-alias-border-l2,#ddd);overflow-wrap:anywhere}.dshc-import-row p{font-size:12px;margin:5px 0}.dshc-import .dshc-import-pick{display:flex;align-items:flex-start;gap:8px}.dshc-import-pick input{margin-top:2px;flex-shrink:0}.dshc-import-warning{color:var(--dsw-alias-state-warn-primary,#886200)}";
+                    style.textContent = CSS + CSS_EXTRA + MAIL_CSS + ".dshc-import{margin:12px 0;padding:14px;border:1px solid var(--dsw-alias-border-l2,#d5d9df);border-radius:12px;min-width:0}.dshc-import h3{margin:0 0 8px}.dshc-import label{display:block;font-size:12px;margin:10px 0}.dshc-import input[type=file]:not(.dshc-file-native),.dshc-import textarea,.dshc-import select{display:block;box-sizing:border-box;width:100%;max-width:100%;margin-top:5px;border:1px solid var(--dsw-alias-border-l2,#ccc);border-radius:8px;padding:7px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff)}.dshc-import textarea{resize:vertical;font:12px/1.5 monospace}.dshc-import-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.dshc-import-rows{max-height:480px;overflow:auto}.dshc-import-row{padding:10px 4px;border-bottom:1px solid var(--dsw-alias-border-l2,#ddd);overflow-wrap:anywhere}.dshc-import-row p{font-size:12px;margin:5px 0}.dshc-import .dshc-import-pick{display:flex;align-items:flex-start;gap:8px}.dshc-import-pick input{margin-top:2px;flex-shrink:0}.dshc-import-warning{color:var(--dsw-alias-state-warn-primary,#886200)}";
                     style.textContent += "@media(max-width:700px){[role=dialog]:has(.dshc-root){width:100%!important;max-width:100%!important;flex-direction:column!important}[role=dialog]:has(.dshc-root)>nav+div{min-width:0;width:100%}[role=dialog]:has(.dshc-root)>nav+div>div:has(.dshc-root){padding:12px!important;min-width:0}[role=dialog]:has(.dshc-root) nav{width:100%!important;flex-basis:auto!important;border-right:0;max-height:170px;overflow:auto}[role=dialog]:has(.dshc-root) nav>div:has(>button){display:flex;flex-direction:row!important;flex-wrap:wrap;flex-shrink:0;gap:4px}}";
                     document.head.appendChild(style);
                     return () => { style.remove(); };

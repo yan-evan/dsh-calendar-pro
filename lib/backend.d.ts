@@ -1,8 +1,6 @@
 /**
- * 日历后端：本地日历与远程 CalDAV 共用的一面。
- *
- * 业务层（工具、面板路由、导入）只依赖这个接口，不关心数据存在哪；
- * 两者互斥，由 config.backend 决定，任何时刻只有一个生效。
+ * 日历后端接口：本地日历与 CalDAV 共用。
+ * 业务层（工具、面板路由、导入）只依赖这一面；两者由 config.backend 决定，互斥生效。
  */
 import type { AvailabilityInput, AvailabilityResult } from './availability.js';
 import { type BackendKind, type CalendarConfig } from './config.js';
@@ -37,18 +35,13 @@ export interface CalendarBackend {
     importRaw(uid: string, data: string, signal?: AbortSignal): Promise<void>;
     /** 取某个资源的 iCalendar 原文（迁移要原样搬运，不能走会丢字段的解析再拼装）。 */
     raw(uid: string, signal?: AbortSignal): Promise<string>;
-    /**
-     * 一次取出全部资源的原文，供导出使用。
-     * 不写成「先 snapshot 再逐条 raw」：那对 CalDAV 是 N+1 次请求，事件一多必然超时。
-     */
+    /** 一次取出全部资源原文供导出使用，避免「先 snapshot 再逐条 raw」的 N+1 请求。 */
     rawAll(signal?: AbortSignal): Promise<string[]>;
 }
 /**
  * 按配置构造后端。
- *
- * `backend` 未设置（首启、用户还没选）时返回本地后端：此时本地日历是空的，
- * 读操作返回空集、写操作会在用户第一次新建日程时惰性创建数据文件。
- * 选中的是 caldav 却没配好账号，由 resolveConfig 抛出带指引的中文错误 —— 不静默回退。
+ * backend 未设置时返回本地后端：读操作返回空数组，写操作在首次新建时创建数据文件。
+ * backend 为 caldav 但账号不全时，resolveConfig 抛中文指引错误，不静默回退。
  */
 export declare function createBackend(config: CalendarConfig | undefined, env?: NodeJS.ProcessEnv): CalendarBackend;
 /** 显式构造远程后端；未配置会抛带指引的中文错误（迁移前必须先连上）。 */

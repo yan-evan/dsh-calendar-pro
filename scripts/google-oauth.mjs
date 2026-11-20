@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 /**
- * 换一枚 Google refresh token —— Google 的 CalDAV 只认 OAuth，而 refresh token 只能靠
- * 一次浏览器授权拿到。桌面应用（Desktop app）类型的客户端只允许 http://127.0.0.1 回调，
- * 所以这里起一个一次性的本地服务器收 code，再拿 code 去换 token。
+ * 换取 Google refresh token。Google 的 CalDAV 只认 OAuth，refresh token 需一次浏览器授权。
+ * Desktop app 客户端仅允许 http://127.0.0.1 回调，脚本起一次性本地服务器收 code 再换 token。
  *
  * 用法：
- *   node scripts/google-oauth.mjs --client-id <你的 clientId> --client-secret <你的 clientSecret>
- *   （也可用环境变量 DSH_CALENDAR_CLIENT_ID / DSH_CALENDAR_CLIENT_SECRET）
- *
+ *   node scripts/google-oauth.mjs --client-id <id> --client-secret <secret>
+ *   或环境变量 DSH_CALENDAR_CLIENT_ID / DSH_CALENDAR_CLIENT_SECRET
  * 可选：--scope calendar|calendar.readonly  --port <n>  --no-open  --timeout <秒>  --token-url <url>（仅测试）
  */
 import { createServer } from 'node:http'
@@ -29,11 +27,10 @@ export function pkcePair() {
 }
 
 /**
- * 自检 clientId：控制台列表里显示的是**截断**的（150465783795-65g8…），
- * 直接粘那一串 Google 只会回一张 400 页。这里提前把这类错误拦下来，
- * 顺便把首尾空格去掉。
+ * 自检 clientId：控制台列表里显示的是截断值（150465783795-65g8…），
+ * 整串粘贴 Google 只会返回 400 页，这里提前拦住。
  */
-/** 去掉粘贴时带上的引号与首尾空白（cmd 里连引号一起复制很常见）。 */
+/** 去掉粘贴带上的引号与首尾空白。 */
 export function cleanValue(value) {
   return String(value ?? '').trim().replace(/^["']+/, '').replace(/["']+$/, '').trim()
 }
@@ -55,9 +52,8 @@ export function validateClientId(clientId) {
 }
 
 /**
- * 预检授权地址：Google 对参数错误返回 400 + 错误页，对合法请求返回同意页（200/302）。
- * 与其把人丢进浏览器看一张机器人 400 页，不如在终端把原因说清楚。
- * 网络不通时返回 undefined（不因为预检失败就拦住整个流程）。
+ * 预检授权地址：参数错误时 Google 返回 400 错误页，合法时返回同意页（200/302）。
+ * 网络不通返回 undefined，不因此中断流程。
  */
 export async function checkAuthUrl(url, fetchImpl = fetch) {
   try {
@@ -141,13 +137,11 @@ export function parseArgs(argv, env = process.env) {
 }
 
 /**
- * 打开浏览器的命令。
+ * 打开浏览器。
  *
- * Windows 上**不要**用 `cmd /c start <url>`：授权 URL 里全是 `&`（client_id=…&redirect_uri=…
- * &response_type=code…），cmd 会把 `&` 当成命令分隔符，浏览器只收到第一段 —— Google 那边
- * 的表现就是 `Required parameter is missing: response_type`（这个坑真踩过：预检查不出来，
- * 因为脚本自己发的请求是完整的，只有「交给浏览器」那一步被截断）。
- * rundll32 直接吃整串参数，不经过 shell 解析。
+ * Windows 上不要用 `cmd /c start <url>`：授权 URL 里全是 `&`，cmd 会当作命令分隔符，
+ * 浏览器只收到第一段，Google 报 `Required parameter is missing: response_type`。
+ * rundll32 直接接收整串参数，不经过 shell 解析。
  */
 export function browserCommand(platform, url) {
   if (platform === 'win32') return { command: 'rundll32', args: ['url.dll,FileProtocolHandler', url] }

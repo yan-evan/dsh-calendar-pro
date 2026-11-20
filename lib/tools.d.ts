@@ -1,7 +1,6 @@
 /**
  * 七个面向模型的日历工具：list / create / update / delete / search / health / findTime。
- * 直接调用 ctx.tools.register 注册【编译好的 JSON Schema】参数与 canonical 输出。
- *
+ * 参数为编译好的 JSON Schema，返回 canonical 输出。
  * @module dsh-calendar-pro/tools
  */
 import { type CalendarConfig } from './config.js';

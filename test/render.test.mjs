@@ -1,12 +1,6 @@
 /**
- * 真 DOM 行为测试：jsdom + 真 React 渲染周视图，然后派发 pointer / click / keydown。
- *
- * 为什么要有这一层：纯函数测试与源码正则都测不到下面这些 ——
- *   · 组件渲染时会不会直接抛（曾把 useEffect 依赖数组写在 const data 之前，TDZ 崩掉整个面板）；
- *   · 点事件块会不会冒泡到日列的「新建日程」；
- *   · 一次拖动到底发了几次请求、Esc 有没有取消；
- *   · 组件卸载后 window 上有没有留下监听器（残留的 pointerup 会替用户改期）；
- *   · 浮层面板里横向换天是否真的生效（列矩形必须用视口坐标）。
+ * 真 DOM 行为：jsdom + React 渲染周视图，派发 pointer / click / keydown。
+ * 覆盖新建与改期的冒泡、请求次数、Esc 取消、卸载后监听器残留、浮层内换天。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -942,7 +936,7 @@ test('加载动画：三点环绕 + 文案，不再出现网格骨架', async ()
   } finally { await react.act(async () => root.unmount()); }
 });
 
-test('空闲时段面板与日历视图互斥：打开面板时不渲染月/周/议程，候选自己滚动', async () => {
+test('找空闲时段是弹窗：日历留在后面，弹窗为宽尺寸，候选区独立滚动', async () => {
   const { react, reactDomClient, components, win } = await setup({});
   const flush = async () => { await react.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); }); };
   const { container, root } = await render(react, reactDomClient, react.createElement(components.CalendarPanel, {}));
@@ -954,11 +948,15 @@ test('空闲时段面板与日历视图互斥：打开面板时不渲染月/周/
     assert.equal(button.disabled, false, '已配置日历时按钮可点');
     await react.act(async () => { button.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); });
     await flush();
-    assert.ok(container.querySelector('.calendar-availability'), '空闲面板要出现');
-    // 两者平级时视图的 flex:1 会把面板挤扁、候选被压到只剩两行 —— 所以打开面板就不渲染视图。
-    assert.equal(container.querySelector('.dshc-grid'), null, '打开空闲面板时不该还渲染月视图');
-    assert.equal(container.querySelector('.dshc-week'), null, '不该渲染周视图');
-    assert.equal(container.querySelector('.dshc-agenda'), null, '不该渲染议程视图');
+    const modal = win.document.querySelector('.dshc-modal-wide');
+    assert.ok(modal, '要找空闲时段应该开一个宽弹窗');
+    assert.ok(modal.querySelector('.calendar-availability.in-modal'), '查询面板嵌在弹窗里，不自带标题和关闭按钮');
+    // 日历不再被替换：挑空档的时候，用户要能看见日历时上已经有什么安排。
+    assert.ok(container.querySelector('.dshc-grid'), '打开弹窗后月视图仍在，日历不被替换');
+    assert.equal(modal.querySelectorAll('.availability-heading').length, 0, '弹窗内不该再出现一套标题和关闭按钮');
+    const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+    assert.match(bundle, /\.calendar-availability\.in-modal \.availability-results\{max-height/, '候选区要自己滚动，条件区不跟着滚');
+    assert.match(bundle, /\.dshc-modal-wide\{width:min\(760px,94vw\)\}/, '宽弹窗宽度要落在 760px');
   } finally { await react.act(async () => root.unmount()); }
 });
 

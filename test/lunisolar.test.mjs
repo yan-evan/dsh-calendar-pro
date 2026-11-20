@@ -1,6 +1,6 @@
 /**
- * 农历与法定节假日：用 vm 直接加载 templates/panels/lunisolar.js（纯函数，不依赖 React/DOM）。
- * 假日数据按国务院办公厅公告逐条核对，见 templates/data/holidays.json 的 sources。
+ * 农历与法定节假日：vm 直接加载 templates/panels/lunisolar.js（纯函数，不依赖 React / DOM）。
+ * 假日数据来源见 templates/data/holidays.json 的 sources。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

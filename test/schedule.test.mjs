@@ -1,6 +1,4 @@
-/**
- * 周视图改期的几何算法 —— 直接测发布文件 lib/client.js 里的实现（见 helpers/client-internals.mjs）。
- */
+/** 周视图改期的几何算法，直接测 lib/client.js 的实现（见 helpers/client-internals.mjs）。 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { api as internals, source as SOURCE } from './helpers/client-internals.mjs';
@@ -151,7 +149,8 @@ test('拖拽接线：监听器一次注册/卸载摘净、视口坐标判列、r
   assert.match(src, /const hourPx = Math\.max\(4, timelineHeight \/ \(\(window_\.end - window_\.start\) \/ 60\)\)/, '像素↔分钟按窗口实测高度换算，不再固定 44px/小时');
   assert.match(src, /const moveQueue = useRef\(\{\}\)/, '每个 uid 一个串行队列');
   assert.match(src, /if \(range\.start === shown\.start && range\.end === shown\.end\)\s*return;/, '无效位移不发请求');
-  assert.match(src, /AbortSignal\.timeout\(API_TIMEOUT_MS\)/, '请求要有超时');
+  assert.match(src, /AbortSignal\.timeout\(spec\.timeoutFor\(action\)\)/, '请求要有超时');
+  assert.match(src, /timeoutFor: \(action\) => action === "availability" \? 25000 :[\s\S]{0,80}API_TIMEOUT_MS/, '日历动作默认 15 秒，只对慢动作放宽');
   assert.match(src, /if \(isRecurring\(event\)\) \{\s*notify\(t\("move\.recurringUnsupported"\)\);\s*return;\s*\}/, '重复日程拖动被挡（会重锚系列起点）');
   assert.match(src, /slotFromEvent\(event\)\.durationMinutes > 24 \* 60/, '超过 24 小时的日程也挡住');
   assert.ok(src.indexOf('const data = useCalendarData') < src.indexOf('const focusUid = useRef(null)'), '焦点恢复的 effect 必须写在 const data 之后（依赖数组在渲染期求值，写前面会 TDZ 崩溃）');

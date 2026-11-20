@@ -1,7 +1,6 @@
 /**
  * 校验 templates/data/holidays.json：格式、日期合法性、区间重叠、调休冲突、公告来源覆盖。
- * 官方公告是人工录入的，这个脚本负责把「手滑写错一天」挡在 build 之前。
- * 运行：npm run holidays:check
+ * 官方公告为人工录入，本脚本把错误挡在 build 之前。运行：npm run holidays:check
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'

@@ -50,6 +50,13 @@ dsh-calendar-pro is a calendar plugin for [DSH (DeepSeek Harness)](https://githu
 - **Direct manipulation**: click to open details, drag to reschedule, click empty space to create — no page jumps
 - **Bilingual UI**: follows the DSH display language automatically, no separate setting
 
+**Schedules that arrive by email:**
+
+- **Mail-to-event detection**: connect a read-only inbox and let the plugin turn "meeting at 3pm Wednesday" into schedule candidates
+- **Nothing lands silently**: candidates wait in a review list; "Create event" opens a pre-filled form for you to check before saving
+- **New mail nudges**: a badge and a light toast tell you when new mail contains a schedule, without stealing focus
+- **Read-only by design**: nothing is sent, deleted or marked as read, and the app password stays on this machine
+
 **A full traditional calendar, too:**
 
 - **Local calendar**: zero configuration, no account, fully usable without connecting to any server

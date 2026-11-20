@@ -1,6 +1,5 @@
 /**
- * 经期预测与本机存储：vm 直接加载 templates/panels/cycle.js（纯函数，无 React / DOM 依赖）。
- * 重点是「脏数据不乱画、历史能回看、预测按固定周期、数据不出本机」。
+ * 经期预测与本机存储：vm 直接加载 templates/panels/cycle.js（纯函数，无 React / DOM）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

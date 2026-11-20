@@ -1,13 +1,11 @@
 /**
- * 农历 + 国务院办公厅法定节假日 / 调休。
+ * 农历与国务院办公厅法定节假日 / 调休。
  *
- * 设计约束：
- *   · 浏览器端 client.js 是单文件 IIFE，不能 import npm 包，也不该为一个日历去联网。
- *     农历改用 ECMAScript Intl 的 chinese calendar（ICU 自带，零依赖、零数据表），
- *     不支持或静默回落成公历的实现会被自检挡掉，宁可不显示也不显示错日期。
- *   · CALENDAR_HOLIDAYS 由 scripts/build-client.mjs 从 templates/data/holidays.json 注入，
- *     这里只消费、绝不内置猜测数据。公告没发布的年份返回 null，不显示「休 / 班」。
- *   · 全部是纯函数，test/lunisolar.test.mjs 用 vm 直接加载，不依赖 React / DOM。
+ * 浏览器端 client.js 是单文件 IIFE，不能 import npm 包，也不为一个日历去联网：
+ * 农历用 Intl 的 chinese calendar（ICU 自带），不支持或回落成公历的实现在自检里挡掉。
+ * CALENDAR_HOLIDAYS 由 scripts/build-client.mjs 从 templates/data/holidays.json 注入，
+ * 这里只消费，内置数据为零；公告未发布的年份返回 null，不显示「休 / 班」。
+ * 全部是纯函数，test/lunisolar.test.mjs 用 vm 直接加载。
  */
 const LUNAR_DAY_DIGITS = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 /** 农历传统节日。闰月不过节，匹配时先去掉「闰」前缀。 */
@@ -31,10 +29,8 @@ function lunarChineseDay(n) {
     return String(n);
 }
 /**
- * 拿一个能用的农历格式器。两个坑：
- *   1. 老宿主可能不支持 u-ca-chinese，构造会抛 RangeError；
- *   2. 更阴的是「不抛、静默回落成公历」——2026-02-17 公历是 2月17日、农历是正月初一，
- *      用这个已知日期探一下即可区分。
+ * 取一个可用的农历格式器。老宿主可能不支持 u-ca-chinese，构造抛 RangeError；
+ * 也有不抛、静默回落成公历的实现，用 2026-02-17（正月初一）探一下即可区分。
  */
 function createLunarFormatter() {
     try {
@@ -59,10 +55,9 @@ function localDayKey(date) {
     return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
 }
 /**
- * ICU 个别年份与中国农历差一天：用「正月初一锚点」整段平移。
- * 取不晚于 date 的最近一个锚点（自然处理跨农历年边界），算出该年 ICU 正月初一
- * 比锚点晚几天，查询时就把公历日期往后挪几天再问 ICU。
- * 没有锚点的年份不修正（shift = 0），手册 §7 说明每年补锚点的流程。
+ * ICU 个别年份与中国农历差一天，用正月初一锚点整段平移：
+ * 取不晚于 date 的最近锚点，算出该年 ICU 正月初一偏移天数，查询时把公历日期挪几天。
+ * 没有锚点的年份 shift = 0，补锚点流程见手册 §7。
  */
 const LUNAR_SHIFT_CACHE = new Map();
 function lunarAnchors() {
@@ -131,8 +126,8 @@ function lunarPartsRaw(date) {
     return rawWithoutShift(probe);
 }
 /**
- * 一天的农历信息。显示优先级：传统节日 > 初一显示月名（含闰月标记）> 中文日名。
- * 除夕不写死「腊月三十」：腊月可能只有廿九天，用「次日是正月初一」判断才准。
+ * 一天的农历信息。优先级：传统节日 > 初一显示月名（含闰月）> 中文日名。
+ * 除夕不写死「腊月三十」，腊月可能只有廿九天，按「次日是正月初一」判断。
  */
 function lunarPartsOf(date) {
     const raw = lunarPartsRaw(date);
@@ -159,8 +154,8 @@ function lunarPartsOf(date) {
     };
 }
 /**
- * 查某天是「休」还是「班」。调休上班优先于放假区间（公告里两者不会重叠，兜个底）。
- * 未收录的年份返回 null —— 不猜、不用媒体推算填坑。
+ * 查某天是「休」还是「班」。调休上班优先于放假区间。
+ * 未收录的年份返回 null，不推算。
  */
 function holidayOf(key) {
     const years = (typeof CALENDAR_HOLIDAYS === 'undefined' ? null : CALENDAR_HOLIDAYS.years) || {};

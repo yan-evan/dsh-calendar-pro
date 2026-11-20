@@ -1,22 +1,20 @@
 /**
- * dsh-calendar-pro —— 日程管理插件（node 半身，配置走 cordis.patch.yml）。
+ * dsh-calendar-pro 插件入口（Node 侧，配置来自 cordis.patch.yml）。
  *
- * 插件导出 apply(ctx, config)：把七个面向模型的工具（calendar_list / calendar_create /
- * calendar_update / calendar_delete / calendar_search / calendar_health / calendar_find_time）
- * 注册进宿主进程的工具注册表。
- * 数据源默认走本地日历，无需任何账号；只有显式切到 CalDAV 时才需要连接配置。
- *
- * @module dsh-calendar-pro
+ * apply(ctx, config) 把七个日历工具注册进宿主工具表：calendar_list / create /
+ * update / delete / search / health / find_time。数据源默认本地日历，切到 CalDAV
+ * 才需要连接配置。
  */
 import { type CalendarConfig } from './config.js';
 import { type CalendarToolDefinition } from './tools.js';
 import { type CalendarSettingsFace } from './web.js';
+import { MailBackend } from './mail/backend.js';
 /** 宿主用 entry 的 Config 生成设置表单：0.1.7 起这就是「注册设置项」的方式。 */
 export declare const Config: import("@deepseek-ai/schemastery").default;
 export type Config = CalendarConfig;
 /**
- * cordis 服务注入：apply 里要用 ctx.tools，必须显式声明注入，否则宿主会抛 cannot get property without inject。
- * name 只用于宿主诊断树里的 fiber 名（不是 service key、也不是去重键），用包名避免与其它日历插件混淆。
+ * 显式声明 ctx.tools 注入，否则宿主会抛 cannot get property without inject。
+ * name 只作为诊断树里的 fiber 名，不是 service key。
  */
 export declare const name = "dsh-calendar-pro";
 export declare const inject: string[];
@@ -55,18 +53,13 @@ export interface CalendarPluginContext {
 /** 兜底：把连接配置存进插件自己的文件（宿主 settings 不可用/注册失败时）。 */
 export declare function fileSettingsFace(file?: string): CalendarSettingsFace;
 /**
- * 接上配置存储：0.1.7 的宿主表单 → 老宿主的 settings 命名空间 → 插件自己的兜底文件。
- *
- * 三代宿主三条路，每一条失败都往下退而不是抛：
- *   1. **0.1.7 起**：设置项就是 entry 的 Config（`.volatile()` 字段），宿主自己投影成表单，
- *      插件不再注册命名空间；读=投影活配置，写=按 entry id 逐字段 set/unset。
- *   2. **0.1.6 及更早**：在插件加载的**同步阶段**调 `settings.register`（宿主的 register
- *      内部会 `ctx.effect(...)`，在请求处理里注册会失败，而失败一旦被吞掉，就会在保存时
- *      才暴露成「namespace is not registered」）；注册失败但 describe() 里已有我们这一段，
- *      说明是重复 apply 的第二个实例，搭既有注册的车。
- *   3. 服务不在、或注册失败且没人注册过 → 用兜底文件。
- * 返回 reason 是为了让面板说清「为什么不是宿主设置」，而不是笼统一句「不可用」。
- * @returns 读写面、它在 describe() 里的 ns，以及退化原因（没退化就没有）。
+ * 接上配置存储，按宿主版本依次降级：
+ *   0.1.7+  entry 配置直接投影成表单，读=活配置，写=按 entry id 逐字段 set/unset；
+ *   0.1.6-  同步阶段 settings.register；注册失败但 describe() 已有本段时按重复 apply 处理，
+ *           借用既有注册；
+ *   都不可用 → 插件自己的兜底文件。
+ * 返回 reason 供面板说明降级原因。
+ * @returns 读写面、describe() 里的 ns、退化原因
  */
 export declare function attachSettings(ctx: CalendarPluginContext, cfg: CalendarConfig): {
     face: CalendarSettingsFace;
@@ -74,11 +67,17 @@ export declare function attachSettings(ctx: CalendarPluginContext, cfg: Calendar
     ns: string;
 };
 /**
- * 插件入口：惰性解析配置并注册七个日历工具。
- * @param ctx - 宿主上下文（至少含 tools.register）。
- * @param config - 插件配置（可缺省）。
+ * 插件入口：惰性解析配置，注册七个日历工具。
+ * @param ctx 宿主上下文（至少含 tools.register）
+ * @param config 插件配置，可缺省
  */
 export declare function apply(ctx: CalendarPluginContext, config?: CalendarConfig | null): void;
+/**
+ * 邮件日程识别模块的装配点：挂路由、懒接模型、起轮询。
+ * 全部走局部 inject，顶层仍只有 tools / settings；宿主缺哪个服务都只是降级。
+ * 轮询固定 15 秒一跳、累计够 pollSeconds 才真跑，面板改间隔下一次即生效。
+ */
+export declare function installMailModule(ctx: CalendarPluginContext): MailBackend;
 export * from './parameters.js';
 export * from './config.js';
 export * from './ical.js';
@@ -91,3 +90,9 @@ export * from './host-settings.js';
 export * from './import-ical.js';
 export * from './import-web.js';
 export { liveConfig } from './host-config.js';
+export * from './mail/types.js';
+export * from './mail/extract.js';
+export * from './mail/store.js';
+export * from './mail/client.js';
+export * from './mail/backend.js';
+export * from './mail/web.js';

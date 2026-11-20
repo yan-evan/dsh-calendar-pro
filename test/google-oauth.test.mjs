@@ -1,8 +1,6 @@
 /**
- * Google OAuth 换取脚本：授权地址、code 换 token、参数解析。
- *
- * 令牌端点用本地假服务器替换（--token-url），回调也走本机回环：
- * 这条测试不碰 Google，也不会打开任何浏览器。
+ * Google OAuth 脚本：授权地址、code 换 token、参数解析。
+ * 令牌端点用本地假服务器（--token-url），回调走回环，不联网、不开浏览器。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

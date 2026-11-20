@@ -35,33 +35,24 @@ export interface CalendarSettingsFace {
     replace(value: Record<string, unknown>, revision: number): Promise<void>;
 }
 /**
- * 由一个「宿主 settings provider + 可选 scope」拼出面板要的读写面。
- *
- * 注册**不在这里**：宿主的 register 内部会 `ctx.effect(...)`，必须发生在插件加载的同步阶段；
- * 在请求处理里调用它会失败（此前就这样：看着「接上了」，真写的时候报 namespace is not registered）。
+ * 由宿主 settings provider 与 scope 组出面板的读写面。
+ * 注册不在这里：宿主 register 会调用 ctx.effect，必须在插件加载的同步阶段完成。
  */
 export declare function settingsFaceOf(provider: any, scope: any, ns?: string): CalendarSettingsFace;
 /** 面板要读写的连接字段。空串 = 保持不变，null = 明确清除。 */
 export declare const CONNECTION_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl"];
 /**
- * 真正会落盘的键：连接字段 + 数据源选择。
- *
- * `backend` 必须在这一组里 —— 它曾经只存在于 CONNECTION_KEYS 之外，
- * 于是 mergeConnection 把它过滤掉、mutate 的 ops 也不带它：setBackend 返回成功，
- * 读回来还是 null，界面永远停在「开始使用日历」。
+ * 会落盘的键：连接字段与数据源选择。
+ * backend 必须在内，否则 mergeConnection 会把它过滤掉，setBackend 成功但读回 null。
  */
 export declare const WRITABLE_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl", "backend"];
 /**
- * Harness 0.1.7 宿主的读写面：真相就是本 entry 的配置，不再有独立命名空间文档。
- *
- * 两处与 {@link settingsFaceOf} 不同，都是被新接口逼出来的：
- *   - read 直接投影活配置（profile 里那一份），不必问 describe()；
- *   - 写用 `mutate` 的逐字段 set/unset：面板的「清空」要真的清掉，
- *     而 `replace` 会把整段 live 字段重置成「下层继承值 + 本次提交」。
- * 宿主没有 mutate 时才退回 replace。
- * @param provider 宿主 settings 服务（0.1.7 形态）。
- * @param entryId 本实例在 profile 里的 entry id（表单就以它为 ns）。
- * @param read 读当前生效的连接字段（只带真的设过的键）。
+ * 0.1.7 宿主的读写面：数据取自本 entry 配置，不再有独立命名空间文档。
+ * 与 settingsFaceOf 的差异：read 直接投影活配置；写用 mutate 逐字段 set/unset，
+ * 清空才能真的清掉（replace 会重置整段字段）。宿主无 mutate 时退回 replace。
+ * @param provider 宿主 settings 服务
+ * @param entryId 本实例在 profile 里的 entry id，表单以它为 ns
+ * @param read 读当前生效的连接字段
  */
 export declare function hostFormsFaceOf(provider: any, entryId: string, read: () => Record<string, unknown>): CalendarSettingsFace;
 export interface CalendarSettingsBackendOptions {
@@ -84,19 +75,14 @@ export interface CalendarSettingsBackendOptions {
     settingsBase?: Partial<CalendarSettingsValue>;
     /** 为什么没接上宿主 settings（面板要把它显示出来，而不是一句「不可用」）。 */
     settingsReason?: string;
-    /**
-     * 表单在 describe() 里的 ns。老宿主是本插件的命名空间（`dsh-calendar-pro`），
-     * 0.1.7 起是 entry id（默认 `calendar`）—— 懒接入这条退路要靠它才认得出自己那一行。
-     */
+    /** 表单在 describe() 里的 ns：老宿主为插件命名空间，0.1.7 起为 entry id。 */
     settingsNs?: string;
 }
 /** 把「已存值 + 草稿」合并成要落盘的一版：草稿里缺席的键保留原值。 */
 export declare function mergeConnection(stored: Record<string, unknown>, draft: Record<string, unknown>): Record<string, unknown>;
 /**
- * 浏览器端后端：把面板的四个动作翻译成 CalDAV 调用。
- *
- * 配置缺失不抛错：面板需要它来渲染「还没配置」的引导态，所以 status 动作
- * 会回一个 configured:false，而不是让页面拿到 500。
+ * 浏览器端后端：面板动作翻译成 CalDAV 调用。
+ * 配置缺失不抛错，status 回 configured:false，面板据此渲染引导态。
  */
 export declare class CalendarSettingsBackend {
     private readonly options;
@@ -107,37 +93,31 @@ export declare class CalendarSettingsBackend {
     /** settings 服务到位后接上（传 undefined 摘掉）—— 面板据此从只读变成可保存。 */
     attachSettings(face: CalendarSettingsFace | undefined): void;
     /**
-     * 兜底接入：注册由 index.ts 在插件加载时同步完成（那里能拿到活动作用域）。
-     * 这里只在「还没接上」时搭一次既有注册的车 —— 例如插件被重复 apply 时第二个实例，
-     * 它没资格注册，但可以照常读写（值从 describe() 描述符来，写走 provider.replace）。
+     * 兜底接入：注册由 index.ts 在同步阶段完成。这里只在未接上时借用既有注册，
+     * 供重复 apply 的第二个实例读写（读走 describe()，写走 provider.replace）。
      */
     private ensureSettings;
     /**
-     * 当前生效配置：patch 行配置（或 getter 现取的那份）+ 面板写进 settings 的字段。
-     *
-     * 面板自己也要合并一遍，而不是只依赖传入的 getter —— 否则「面板显示的连接」
-     * 与「工具实际用的连接」就成了两份来源，保存成功却看到未配置的怪象。
+     * 当前生效配置：entry 配置叠加面板写入 settings 的字段。
+     * 面板自己也合并一遍，避免「显示的连接」与「工具用的连接」两个来源。
      */
     private configOf;
     /** Internal getter shared with the authenticated import carrier. Never sent to the browser. */
     currentConfig(): CalendarConfig;
-    /**
-     * 切换数据源并落盘。切到远程前必须验证得通：宁可在这里报错，
-     * 也不要让面板切过去之后满屏「读取失败」。
-     */
+    /** 切换数据源并落盘。切到远程前先验证，避免切过去后满屏读取失败。 */
     private commitBackend;
     /** 惰性解析配置；凭据/端点变化即重建（闭包内比较，不落盘不记日志）。 */
     private service;
     /**
-     * 连接摘要：面板要的每一个非敏感字段都在这里，密钥只回「有没有」。
-     * 未配置时 configured:false + reason（resolveConfig 的中文指引），面板据此渲染引导态。
+     * 连接摘要：非敏感字段照实返回，密码只回有没有。
+     * 未配置时 configured:false + reason，面板据此渲染引导态。
      */
     connection(): Record<string, unknown>;
     /** 兼容旧动作名：status 就是连接摘要。 */
     status(): Record<string, unknown>;
     /**
-     * 草稿 → 拟议配置：先与已存值合并（草稿缺席的键保留原值），再叠加到当前生效配置之上。
-     * 连接测试和保存都走这条路，所以「测试通过」与「保存后能用」看到的是同一份配置。
+     * 草稿 → 拟议配置：先与已存值合并，再叠加到当前生效配置。
+     * 连接测试与保存共用此路径，两者看到的配置一致。
      */
     private proposed;
     /** 真连一次：拿拟议配置列一下未来 30 天，能列出来就算通。 */
@@ -148,8 +128,5 @@ export declare class CalendarSettingsBackend {
     /** 动作分发。每个动作自己校验参数，错误信息面向用户（中文，面板直接显示）。 */
     private dispatch;
 }
-/**
- * 把设置页里的日历面板挂到宿主 webserver 上。
- * 与 dsh-email 相同：ctx.inject(['webServer']) + effect 注册，插件卸载即摘掉路由。
- */
+/** 把日历面板挂到宿主 webserver：ctx.inject(['webServer']) + effect，卸载即摘掉路由。 */
 export declare function installCalendarSettingsWeb(ctx: any, backend: CalendarSettingsBackend): void;

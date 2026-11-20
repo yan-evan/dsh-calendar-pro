@@ -1,20 +1,14 @@
 function calendarText(zh, en) { return UI_LANG === 'en' ? en : zh; }
 /**
- * 工作台页面的样式覆盖层。
+ * 工作台页面的样式覆盖层：一屏之内装下整个日历，页面本身不出现滚动条。
  *
- * 这一层的唯一目标：**一屏之内装下整个日历，页面本身不出现滚动条**。
- * 做法是把 `.w-page` / `.w-body` 原本的 `overflow:auto` 改成 `hidden`，再把剩余高度
- * 一路 flex 传给 `.dshc-view`，由各视图自己吃掉：
- *   · 月视图：6 行等分（grid-template-rows:repeat(6,minmax(0,1fr))），一格放得下几条由 JS 实测算；
- *   · 周视图：时间轴高度由 JS 实测写进 --timeline-h，窗口内的时段线性铺满，不再有「24 小时刻度」；
- *   · 议程：列表内部滚动，页面仍然不动。
- * 页脚（`.dshc-footer`）因此天然停在内容区最后一行，也就是页面右下角。
+ * 把 `.w-page` / `.w-body` 的 `overflow:auto` 改为 `hidden`，剩余高度一路 flex 传给
+ * `.dshc-view`，由各视图消费：月视图 6 行等分，格内条数由 JS 实测算；
+ * 周视图时间轴高度由 JS 写进 --timeline-h；议程列表内部滚动。
  *
- * 两个坑记在这：
- *   1. 所有规则都带 `.calendar-workbench` 前缀。宿主 `.w-page` 的那套样式是行内 <style>，
- *      与插件样式同在一个文档里，只靠顺序不稳，靠选择器权重才稳。
- *   2. 不要给列写 `minmax(65px,1fr)` 这类硬下限 —— 窄容器下它会把网格撑宽，
- *      于是又冒出左右滚动条。一律 `minmax(0,1fr)`。
+ * 所有规则带 `.calendar-workbench` 前缀：宿主 `.w-page` 样式是行内 <style>，
+ * 与插件样式同处一个文档，靠选择器权重而非顺序。
+ * 列宽用 `minmax(0,1fr)`，硬下限会在窄容器下撑出横向滚动条。
  */
 const CALENDAR_WORKBENCH_CSS = `
 .calendar-workbench.w-page[data-main=true]{overflow:hidden;padding-bottom:18px}

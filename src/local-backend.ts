@@ -1,11 +1,8 @@
 /**
- * 本地日历后端：一个 JSON 文件，里面存 iCalendar 原文。
+ * 本地日历后端：单个 JSON 文件，存 iCalendar 原文。
  *
- * 为什么存 iCal 而不是自定义结构：解析、RRULE 展开、字段覆盖更新、时区处理全部复用
- * `ical.ts`；导出就是拼 `.ics`，迁移到 CalDAV 直接 PUT，零转换层。
- *
- * 并发：读改写全部用同步 fs，Node 单线程下不会在同一个 tick 里交错，因此不需要锁；
- * 落盘用「临时文件 + rename」，进程被杀也不会留下半份文件。
+ * 存 iCalendar 原文，RRULE 展开、字段覆盖、时区处理复用 ical.ts，导出即拼 .ics，
+ * 迁移到 CalDAV 直接 PUT。读改写用同步 fs，单线程下不会交错；落盘走临时文件 + rename。
  */
 import { availabilityRequest, findAvailableTimes, type AvailabilityInput, type AvailabilityResult } from './availability.js'
 import { busyResource } from './availability-ical.js'

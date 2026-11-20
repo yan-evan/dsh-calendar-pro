@@ -1,7 +1,6 @@
 /**
  * 七个面向模型的日历工具：list / create / update / delete / search / health / findTime。
- * 直接调用 ctx.tools.register 注册【编译好的 JSON Schema】参数与 canonical 输出。
- *
+ * 参数为编译好的 JSON Schema，返回 canonical 输出。
  * @module dsh-calendar-pro/tools
  */
 
@@ -136,8 +135,8 @@ export function buildCalendarTools(config: CalendarConfigSource, env: NodeJS.Pro
   let cachedKey: string | undefined
   let cachedBackend: CalendarBackend | undefined
   /**
-   * 惰性构造后端：配置里选了 caldav 就解析出端点与凭据，否则用本地日历。
-   * 本地后端无状态，按 kind 复用即可；caldav 要按完整解析结果比较，凭据变了就不能复用旧 token。
+   * 懒构造后端：配置选了 caldav 就解析端点与凭据，否则用本地日历。
+   * 本地后端无状态按 kind 复用；caldav 按完整解析结果比较，凭据变了不复用旧 token。
    */
   const service = (): CalendarBackend => {
     const current = configOf()

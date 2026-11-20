@@ -1,8 +1,5 @@
 /**
- * 设置页日历面板的后端：安全壳 + list/create/update/delete 全链路。
- *
- * 全部走假的 CalDAV 服务与假的 req/res —— 这套测试不联网、不碰真实日历，
- * 也不打印任何凭据。
+ * 设置页日历面板后端：安全壳 + list / create / update / delete 全链路，用假 CalDAV 与假 req / res。
  */
 import test from 'node:test';
 import { join } from 'node:path'
