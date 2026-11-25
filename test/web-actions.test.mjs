@@ -4,12 +4,18 @@
 import test from 'node:test';
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import assert from 'node:assert/strict';
 import { CalendarSettingsBackend, SETTINGS_ROUTE, hostVerdict, mergeConnection, postVerdict } from '../lib/web.js';
 import { toCalendarConfig, toSettingsBase, validateSettingsValue } from '../lib/settings.js';
 import { attachSettings } from '../lib/index.js';
 import { readConnectionFile, writeConnectionFile } from '../lib/store.js';
+import { CalendarService } from '../lib/caldav.js';
+import { LocalBackend } from '../lib/local-backend.js';
+
+// 与本机真实日历隔离：saveConnection 首连推送会读本地日历，不能碰到 ~/.dsh。
+const testHome = mkdtempSync(join(tmpdir(), 'dshc-web-actions-'));
+process.env.DSH_HOME = testHome;
 
 /** 造一个最小 req：POST body 走异步迭代器（handle 里就是 for await 读的）。 */
 function makeReq(options = {}) {
@@ -685,3 +691,213 @@ test('保存并启用：当前用着本地日历时，保存后自动切到远�
   assert.equal(settings.state.writes[0].value.backend, 'caldav', '保存即启用远程，不必再去设置页手点');
   assert.equal(res.state.body.value.connection.backend, 'caldav', '响应里的连接摘要也要是新数据源');
 });
+
+// ───────────────────────────── B档：远程归档到本地 + 切换确认 ─────────────────────────────
+
+const ARCH_HOME = 'https://cal.example/me/calendars/home/'
+const ARCH_WORK = 'https://cal.example/me/calendars/work/'
+
+function archiveEvent(icalUid, url, summary, start) {
+  const end = new Date(new Date(start).getTime() + 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  return { uid: url + icalUid + '.ics', href: url + icalUid + '.ics', summary, start, end, allDay: false, icalUid }
+}
+
+function archiveIcs(icalUid, summary) {
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//test//EN',
+    'BEGIN:VEVENT', 'UID:' + icalUid, 'DTSTAMP:20261120T000000Z',
+    'DTSTART:20261121T020000Z', 'DTEND:20261121T030000Z', 'SUMMARY:' + summary,
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n')
+}
+
+/** 桩掉远程 CalendarService：按集合 URL 返回快照与原文。本地写入失败另用 stubLocalWrites 模拟。 */
+function stubRemote(eventsByUrl) {
+  const originals = {
+    snapshot: CalendarService.prototype.importSnapshot,
+    raw: CalendarService.prototype.raw,
+  }
+  CalendarService.prototype.importSnapshot = async function () {
+    const list = eventsByUrl[this.config.caldavUrl] ?? []
+    return { uids: new Set(list.map((e) => e.icalUid)), events: list }
+  }
+  CalendarService.prototype.raw = async function (uid) {
+    const list = eventsByUrl[this.config.caldavUrl] ?? []
+    const hit = list.find((e) => e.uid === uid)
+    return hit ? archiveIcs(hit.icalUid, hit.summary) : ''
+  }
+  return {
+    restore() {
+      CalendarService.prototype.importSnapshot = originals.snapshot
+      CalendarService.prototype.raw = originals.raw
+    },
+  }
+}
+
+/** 桩掉本地后端写入：指定 UID 抛错，模拟归档时目标端写不进去。 */
+function stubLocalWrites(failUids = []) {
+  const original = LocalBackend.prototype.importRaw
+  LocalBackend.prototype.importRaw = async function (uid) {
+    if (failUids.includes(uid)) throw new Error('409 Conflict：模拟写入失败')
+  }
+  return { restore() { LocalBackend.prototype.importRaw = original } }
+}
+
+function archiveHome() {
+  const home = mkdtempSync(join(tmpdir(), 'dshc-archive-'))
+  mkdirSync(join(home, 'data', 'dsh-calendar-pro'), { recursive: true })
+  return home
+}
+
+function seedLocal(home, records) {
+  const dir = join(home, 'data', 'dsh-calendar-pro')
+  writeFileSync(join(dir, 'calendar.json'), JSON.stringify({ version: 1, revision: Object.keys(records).length, events: records }, null, 2))
+}
+
+function readLocal(home) {
+  const file = join(home, 'data', 'dsh-calendar-pro', 'calendar.json')
+  if (!existsSync(file)) return { events: {} }
+  return JSON.parse(readFileSync(file, 'utf8'))
+}
+
+const multiSettings = {
+  backend: 'caldav', provider: 'custom', username: 'me', password: 'p',
+  calendarList: JSON.stringify([{ url: ARCH_HOME, name: '家庭' }, { url: ARCH_WORK, name: '工作' }]),
+}
+
+test('远程 → 本地：归档只搬勾选的日历子集，来源标签写进本地文件', async (t) => {
+  const home = archiveHome()
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const eventsByUrl = {
+    [ARCH_HOME]: [
+      archiveEvent('h1', ARCH_HOME, '家庭会', '2026-11-21T02:00:00Z'),
+      archiveEvent('h2', ARCH_HOME, '家庭会二', '2026-11-22T02:00:00Z'),
+    ],
+    [ARCH_WORK]: [archiveEvent('w1', ARCH_WORK, '工作会', '2026-11-23T02:00:00Z')],
+  }
+  const remote = stubRemote(eventsByUrl)
+  try {
+    const settings = fakeSettings({ ...multiSettings }, 4)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const res = makeRes()
+    await backend.handle(makeReq({ body: { action: 'switchBackend', mode: 'archive', calendarIds: [ARCH_HOME] } }), res)
+    assert.equal(res.state.status, 200, JSON.stringify(res.state.body))
+    assert.equal(res.state.body.value.backend, 'local')
+    assert.equal(res.state.body.value.migrated, 2)
+    assert.deepEqual(res.state.body.value.archived, ['家庭'])
+    assert.deepEqual(res.state.body.value.skipped, { exists: 0, duplicates: 0, invalid: 0 })
+    const local = readLocal(home)
+    assert.deepEqual(Object.keys(local.events).sort(), ['local://h1', 'local://h2'])
+    assert.equal(local.events['local://h1'].calendar.id, ARCH_HOME)
+    assert.equal(local.events['local://h1'].calendar.name, '家庭')
+  } finally { remote.restore() }
+})
+
+test('归档去重：本地已有的同 UID 跳过，不再写一遍', async (t) => {
+  const home = archiveHome()
+  seedLocal(home, { 'local://h1': { ical: archiveIcs('h1', '家庭会'), revision: 1, updatedAt: '' } })
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const eventsByUrl = {
+    [ARCH_HOME]: [
+      archiveEvent('h1', ARCH_HOME, '家庭会', '2026-11-21T02:00:00Z'),
+      archiveEvent('h2', ARCH_HOME, '家庭会二', '2026-11-22T02:00:00Z'),
+    ],
+  }
+  const remote = stubRemote(eventsByUrl)
+  try {
+    const settings = fakeSettings({ ...multiSettings }, 4)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const res = makeRes()
+    await backend.handle(makeReq({ body: { action: 'switchBackend', mode: 'archive', calendarIds: [ARCH_HOME] } }), res)
+    assert.equal(res.state.status, 200, JSON.stringify(res.state.body))
+    assert.equal(res.state.body.value.migrated, 1)
+    assert.equal(res.state.body.value.skipped.exists, 1)
+  } finally { remote.restore() }
+})
+
+test('归档有失败条目时中止切换，数据源仍留在远程', async (t) => {
+  const home = archiveHome()
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const eventsByUrl = {
+    [ARCH_HOME]: [
+      archiveEvent('h1', ARCH_HOME, '家庭会', '2026-11-21T02:00:00Z'),
+      archiveEvent('h2', ARCH_HOME, '家庭会二', '2026-11-22T02:00:00Z'),
+    ],
+    [ARCH_WORK]: [],
+  }
+  const remote = stubRemote(eventsByUrl)
+  const local = stubLocalWrites(['h2'])
+  try {
+    const settings = fakeSettings({ ...multiSettings }, 4)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const res = makeRes()
+    await backend.handle(makeReq({ body: { action: 'switchBackend', mode: 'archive', calendarIds: [ARCH_HOME] } }), res)
+    assert.equal(res.state.status, 400)
+    assert.match(res.state.body.error.message, /切换已中止/)
+    assert.match(res.state.body.error.message, /1 条复制失败/)
+    assert.equal(settings.state.value.backend, 'caldav', '失败时不切源')
+  } finally { remote.restore(); local.restore() }
+})
+
+test('归档选中不在当前连接里的日历 → 报错，不写本地', async (t) => {
+  const home = archiveHome()
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const remote = stubRemote({})
+  try {
+    const settings = fakeSettings({ ...multiSettings }, 4)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const res = makeRes()
+    await backend.handle(makeReq({ body: { action: 'switchBackend', mode: 'archive', calendarIds: ['https://other.example/me/calendars/x/'] } }), res)
+    assert.equal(res.state.status, 400)
+    assert.match(res.state.body.error.message, /不在当前连接/)
+  } finally { remote.restore() }
+})
+
+test('本地 → 远程：不把本地日程回写远程，只切换数据源', async (t) => {
+  const home = archiveHome()
+  seedLocal(home, { 'local://l1': { ical: archiveIcs('l1', '本地会'), revision: 1, updatedAt: '' } })
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const remote = stubRemote({ [ARCH_HOME]: [] })
+  const remoteImported = []
+  const origRemoteImport = CalendarService.prototype.importRaw
+  CalendarService.prototype.importRaw = async function (uid) { remoteImported.push(uid) }
+  try {
+    const settings = fakeSettings({
+      backend: 'local', provider: 'custom', username: 'me', password: 'p',
+      calendarList: JSON.stringify([{ url: ARCH_HOME, name: '家庭' }]),
+    }, 5)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const res = makeRes()
+    await backend.handle(makeReq({ body: { action: 'switchBackend', mode: 'discard' } }), res)
+    assert.equal(res.state.status, 200, JSON.stringify(res.state.body))
+    assert.equal(res.state.body.value.backend, 'caldav')
+    assert.equal(res.state.body.value.migrated, 0)
+    assert.equal(remoteImported.length, 0, '本地日程绝不回写远程')
+  } finally { remote.restore(); CalendarService.prototype.importRaw = origRemoteImport }
+})
+
+test('首次连接远程：本地日程推送到远程第一本；再次保存不重复推', async (t) => {
+  const home = archiveHome()
+  seedLocal(home, { 'local://l1': { ical: archiveIcs('l1', '本地会'), revision: 1, updatedAt: '' } })
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const remote = stubRemote({ [ARCH_HOME]: [] })
+  const remoteImported = []
+  const origRemoteImport = CalendarService.prototype.importRaw
+  CalendarService.prototype.importRaw = async function (uid) { remoteImported.push(uid) }
+  try {
+    const settings = fakeSettings({ backend: 'local' }, 6)
+    const backend = new CalendarSettingsBackend({ config: {}, settings, env: { DSH_HOME: home }, probeFactory: async () => ({ count: 0, sample: [] }) })
+    const first = makeRes()
+    await backend.handle(makeReq({ body: { action: 'saveConnection', provider: 'custom', caldavUrl: ARCH_HOME, username: 'me', password: 'p' } }), first)
+    assert.equal(first.state.status, 200, JSON.stringify(first.state.body))
+    assert.equal(first.state.body.value.pushed, 1)
+    assert.equal(remoteImported.length, 1)
+    assert.equal(settings.state.value.backend, 'caldav')
+
+    const second = makeRes()
+    await backend.handle(makeReq({ body: { action: 'saveConnection', provider: 'custom', caldavUrl: ARCH_HOME, username: 'me', password: 'p' } }), second)
+    assert.equal(second.state.status, 200, JSON.stringify(second.state.body))
+    assert.equal(second.state.body.value.pushed, undefined, '已是远程连接，不重复推送')
+    assert.equal(remoteImported.length, 1)
+  } finally { remote.restore(); CalendarService.prototype.importRaw = origRemoteImport }
+})

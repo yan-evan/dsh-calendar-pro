@@ -81,6 +81,8 @@ export declare function installMailModule(ctx: CalendarPluginContext): MailBacke
 export * from './parameters.js';
 export * from './config.js';
 export * from './ical.js';
+export * from './backend.js';
+export * from './aggregate.js';
 export * from './caldav.js';
 export * from './tools.js';
 export * from './web.js';

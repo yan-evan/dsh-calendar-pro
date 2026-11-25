@@ -28,6 +28,12 @@ export declare const CalendarSettingsSchema: z<Schemastery.ObjectS<{
     refreshToken: z<string, string>;
     tokenUrl: z<string, string>;
     proxyUrl: z<string, string>;
+    /**
+     * 同一账户下的多本日历（JSON 数组字符串）。
+     * 存字符串而不是对象数组：entry 配置、settings、兜底文件三条落盘路径都按扁平字符串处理，
+     * 凭据不会跟着数组走到 settings 描述符里。
+     */
+    calendarList: z<string, string>;
 }>, Schemastery.ObjectT<{
     /** 数据源：local / caldav；空串表示「还没选」，面板据此显示首启页。 */
     backend: z<string, string>;
@@ -45,6 +51,12 @@ export declare const CalendarSettingsSchema: z<Schemastery.ObjectS<{
     refreshToken: z<string, string>;
     tokenUrl: z<string, string>;
     proxyUrl: z<string, string>;
+    /**
+     * 同一账户下的多本日历（JSON 数组字符串）。
+     * 存字符串而不是对象数组：entry 配置、settings、兜底文件三条落盘路径都按扁平字符串处理，
+     * 凭据不会跟着数组走到 settings 描述符里。
+     */
+    calendarList: z<string, string>;
 }>>;
 export interface CalendarSettingsValue {
     backend: string;
@@ -62,6 +74,7 @@ export interface CalendarSettingsValue {
     refreshToken: string;
     tokenUrl: string;
     proxyUrl: string;
+    calendarList: string;
 }
 /** 把一行 cordis.patch.yml 的配置投影成 schema 的 base（只带有值的字段）。 */
 export declare function toSettingsBase(config: CalendarConfig | undefined): Partial<CalendarSettingsValue>;

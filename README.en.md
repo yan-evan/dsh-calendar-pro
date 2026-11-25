@@ -38,6 +38,7 @@ dsh-calendar-pro is a calendar plugin for [DSH (DeepSeek Harness)](https://githu
 **Your schedule across devices:**
 
 - **CalDAV support**: iCloud, Google, Nextcloud, and any other CalDAV-compatible service
+- **Several calendars, one account**: work, family and birthday calendars merge into a single view for reading, searching and booking — and writes can target any one of them
 - **Native reminders**: once synced, iPhone, iPad and Mac remind you through the system Calendar — no extra app needed
 - **Two-way sync**: an event added on your phone shows up on your computer, and a time changed on your computer is updated on your phone
 - **One schedule, consistent everywhere**: check it on your phone while travelling, edit it at your desk, always the same data

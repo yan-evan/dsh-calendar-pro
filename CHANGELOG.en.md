@@ -9,6 +9,21 @@ All notable changes to this project are recorded in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-25
+
+### Added
+
+- **Several calendars under one account (headline of this release)**: all calendars are selected by default on connect, up to 16; listing, search and free-slot lookup read across the selected ones, and duplicate events appear once
+- **Per-calendar operations**: with several calendars connected, events show their source calendar, and the agent can target one calendar for listing, create, update, delete and free-slot lookup
+- **Archive remote calendars to local**: switching remote → local allows archiving a selected subset; unselected calendars stay on the server, and archived events keep their source calendar name
+- **Push on first connection**: the first successful save of a remote connection pushes existing local events to the first remote calendar; re-saving the same connection does not push again
+
+### Changed
+
+- **Connection form**: defaults to iCloud; the calendar picker is now a multi-select inside the **Calendar collection URL** field, showing calendar names only; calendars are discovered on blur with the dedicated button removed; the value steps stay visible; the dialog is 620px wide
+- **Source switching now goes through a confirmation dialog**: remote → local offers "Archive selected and switch" or "Switch without archiving"; local → remote only confirms leaving the local view, and local events are not written back
+- **New events can target a calendar**: with several calendars connected, the form gains a **Calendar** row, first one by default
+
 ## [0.2.0] - 2026-11-20
 
 ### Added

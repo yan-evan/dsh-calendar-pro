@@ -13,7 +13,11 @@ import { attachSettings, apply } from '../lib/index.js';
 import { CalendarSettingsBackend, SETTINGS_ROUTE, hostFormsFaceOf, WRITABLE_KEYS } from '../lib/web.js';
 import { MAIL_ROUTE } from '../lib/mail/web.js';
 
-const CONNECTION_FIELDS = ['provider', 'caldavUrl', 'username', 'password', 'host', 'user', 'calendar', 'calendarId', 'authMethod', 'clientId', 'clientSecret', 'refreshToken', 'tokenUrl', 'proxyUrl'];
+// 与本机真实日历隔离：saveConnection 首连推送会读本地日历，不能碰到 ~/.dsh。
+const testHome = mkdtempSync(join(tmpdir(), 'dshc-host-forms-'));
+process.env.DSH_HOME = testHome;
+
+const CONNECTION_FIELDS = ['provider', 'caldavUrl', 'username', 'password', 'host', 'user', 'calendar', 'calendarId', 'authMethod', 'clientId', 'clientSecret', 'refreshToken', 'tokenUrl', 'proxyUrl', 'calendarList'];
 const SECRETS = ['password', 'clientSecret', 'refreshToken'];
 
 /** 假宿主：0.1.7 的 SettingsForms 形态（有 describe/update/replace/mutate，没有 register）。 */

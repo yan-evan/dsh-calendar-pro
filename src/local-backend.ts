@@ -27,6 +27,8 @@ interface LocalRecord {
   ical: string
   revision: number
   updatedAt: string
+  /** 来源日历：从远程归档进来时记下是哪一本；本地自建的日程不带这个标签。 */
+  calendar?: { id: string; name: string }
 }
 
 interface LocalFile {
@@ -37,6 +39,11 @@ interface LocalFile {
 
 function emptyFile(): LocalFile {
   return { version: 1, revision: 0, events: {} }
+}
+
+/** 把记录上的来源标签带到解析出的事件上；没有标签就原样返回。 */
+function decorate(record: LocalRecord, event: CalendarEvent): CalendarEvent {
+  return record.calendar === undefined ? event : { ...event, calendar: record.calendar }
 }
 
 /** 事件与窗口是否有重叠；全天事件用 YYYY-MM-DD 比较，与解析层保持一致。 */
@@ -68,6 +75,10 @@ export class LocalBackend {
           ical: entry.ical,
           revision: typeof entry.revision === 'number' ? entry.revision : 0,
           updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : '',
+          ...(entry.calendar !== null && typeof entry.calendar === 'object'
+            && typeof (entry.calendar as { id?: unknown }).id === 'string'
+            ? { calendar: { id: (entry.calendar as { id: string }).id, name: typeof (entry.calendar as { name?: unknown }).name === 'string' ? (entry.calendar as { name: string }).name : '' } }
+            : {}),
         }
       }
     }
@@ -107,7 +118,8 @@ export class LocalBackend {
             const event = parseEventFromICal(record.ical, href)
             return event === null ? [] : [event]
           })()
-      for (const event of events) {
+      const decorated = events.map((event) => decorate(record, event))
+      for (const event of decorated) {
         // CalDAV 一侧由服务器按 timeRange 过滤，本地必须自己筛：
         // 非重复事件在 expandEventFromICal 里不判断窗口（原样返回单条）。
         if (overlaps(event, startIso, endIso)) out.push(event)
@@ -126,12 +138,13 @@ export class LocalBackend {
       const event = parseEventFromICal(record.ical, href)
       if (event === null) continue
       if (timeRange !== undefined && !overlaps(event, timeRange.start, timeRange.end)) continue
-      out.push(event)
+      out.push(decorate(record, event))
     }
     return out
   }
 
-  async availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult> {
+  /** 空闲查询所需的占用实例；与 CalDAV 一侧同一条路径：超限就明确失败。 */
+  async busy(input: AvailabilityInput, signal?: AbortSignal): Promise<CalendarEvent[]> {
     signal?.throwIfAborted()
     const request = availabilityRequest(input)
     // 与 CalDAV 一侧相同的安全边界：前后各多读 2 天，覆盖跨时区与跨日边界。
@@ -149,7 +162,11 @@ export class LocalBackend {
       events.push(...busyResource(record.ical, href, start, end, request.timeZone, deadline))
       if (events.length > 10000) throw new Error('日程实例超过 10000 条，请缩小空闲查询范围')
     }
-    return findAvailableTimes(events, input)
+    return events
+  }
+
+  async availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult> {
+    return findAvailableTimes(await this.busy(input, signal), input)
   }
 
   async create(fields: EventFields, signal?: AbortSignal): Promise<CalendarEvent> {
@@ -184,7 +201,7 @@ export class LocalBackend {
     const record = this.require(this.read(), uid)
     const event = parseEventFromICal(record.ical, uid)
     if (event === null) throw new Error('这条本地日程的内容无法解析，请检查数据文件。')
-    return event
+    return decorate(record, event)
   }
 
   async update(uid: string, changes: Partial<EventFields>, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent> {
@@ -198,11 +215,11 @@ export class LocalBackend {
     const next = updateICalString(record.ical, changes)
     if (next === null) throw new Error('这条本地日程无法更新：原内容缺少主日程。')
     file.revision += 1
-    file.events[uid] = { ical: next, revision: file.revision, updatedAt: new Date().toISOString() }
+    file.events[uid] = { ical: next, revision: file.revision, updatedAt: new Date().toISOString(), ...(record.calendar === undefined ? {} : { calendar: record.calendar }) }
     this.write(file, new Date().toISOString())
     const event = parseEventFromICal(next, uid)
     if (event === null) throw new Error('更新后无法解析这条日程，原记录已保留。')
-    return event
+    return decorate(record, event)
   }
 
   async delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{ uid: string; href: string }> {
@@ -230,14 +247,14 @@ export class LocalBackend {
       signal?.throwIfAborted()
       const event = parseEventFromICal(record.ical, href)
       if (event === null) continue
-      events.push(event)
+      events.push(decorate(record, event))
       const icalUid = event.icalUid
       if (typeof icalUid === 'string' && icalUid !== '') uids.add(icalUid)
     }
     return { uids, events }
   }
 
-  async importRaw(uid: string, data: string, signal?: AbortSignal): Promise<void> {
+  async importRaw(uid: string, data: string, signal?: AbortSignal, source?: { id: string; name: string }): Promise<void> {
     signal?.throwIfAborted()
     const parsed = parseEventFromICal(data, HREF_PREFIX + uid)
     if (parsed === null) throw new Error('导入资源缺少可解析的主日程，未写入。')
@@ -246,7 +263,10 @@ export class LocalBackend {
     // 与 CalDAV 一侧的 If-None-Match:* 对齐：绝不覆盖已经存在的资源。
     if (file.events[href] !== undefined) throw new Error('本地已存在 UID 为 ' + uid + ' 的日程，未覆盖。')
     file.revision += 1
-    file.events[href] = { ical: data, revision: file.revision, updatedAt: new Date().toISOString() }
+    file.events[href] = {
+      ical: data, revision: file.revision, updatedAt: new Date().toISOString(),
+      ...(source === undefined || typeof source.id !== 'string' ? {} : { calendar: { id: source.id, name: typeof source.name === 'string' ? source.name : '' } }),
+    }
     this.write(file, new Date().toISOString())
   }
 }

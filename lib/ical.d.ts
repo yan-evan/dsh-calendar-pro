@@ -33,6 +33,11 @@ export interface CalendarEvent {
     url?: string;
     created?: string;
     lastModified?: string;
+    /** 来源日历；只在连接多本日历、由聚合层标注时出现（单本连接不写这个字段）。 */
+    calendar?: {
+        id: string;
+        name: string;
+    };
 }
 /** 展开重复事件超出迭代预算：显式报错，避免把「没走到窗口」静默当成「窗口内没有实例」。 */
 export declare class ExpansionLimitError extends Error {

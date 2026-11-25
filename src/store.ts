@@ -10,7 +10,9 @@ import { dirname, join } from 'node:path'
 
 /** $DSH_HOME/data/dsh-calendar-pro/ ... */
 export function dataDirOf(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.DSH_HOME !== undefined && env.DSH_HOME !== '' ? env.DSH_HOME : join(homedir(), '.dsh')
+  const home = env.DSH_HOME !== undefined && env.DSH_HOME !== '' ? env.DSH_HOME
+    : process.env.DSH_HOME !== undefined && process.env.DSH_HOME !== '' ? process.env.DSH_HOME
+    : join(homedir(), '.dsh')
   return join(home, 'data', 'dsh-calendar-pro')
 }
 

@@ -13,12 +13,12 @@ export declare function postVerdict(headers: Record<string, unknown>): {
 } | undefined;
 /** 面板需要的服务面；测试里可以塞假的进来。 */
 export interface CalendarServiceLike {
-    availability?(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult>;
+    availability?(input: AvailabilityInput, signal?: AbortSignal, calendarId?: string): Promise<AvailabilityResult>;
     get?(uid: string, signal?: AbortSignal): Promise<CalendarEvent>;
-    list(start: string, end: string, options?: unknown, signal?: AbortSignal): Promise<CalendarEvent[]>;
-    create(fields: unknown, signal?: AbortSignal): Promise<CalendarEvent>;
-    update(uid: string, changes: unknown, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent>;
-    delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{
+    list(start: string, end: string, options?: unknown, signal?: AbortSignal, calendarId?: string): Promise<CalendarEvent[]>;
+    create(fields: unknown, signal?: AbortSignal, calendarId?: string): Promise<CalendarEvent>;
+    update(uid: string, changes: unknown, signal?: AbortSignal, scope?: 'series', calendarId?: string): Promise<CalendarEvent>;
+    delete(uid: string, signal?: AbortSignal, scope?: 'series', calendarId?: string): Promise<{
         uid: string;
         href: string;
     }>;
@@ -40,12 +40,12 @@ export interface CalendarSettingsFace {
  */
 export declare function settingsFaceOf(provider: any, scope: any, ns?: string): CalendarSettingsFace;
 /** 面板要读写的连接字段。空串 = 保持不变，null = 明确清除。 */
-export declare const CONNECTION_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl"];
+export declare const CONNECTION_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl", "calendarList"];
 /**
  * 会落盘的键：连接字段与数据源选择。
  * backend 必须在内，否则 mergeConnection 会把它过滤掉，setBackend 成功但读回 null。
  */
-export declare const WRITABLE_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl", "backend"];
+export declare const WRITABLE_KEYS: readonly ["provider", "caldavUrl", "username", "password", "host", "user", "calendar", "calendarId", "authMethod", "clientId", "clientSecret", "refreshToken", "tokenUrl", "proxyUrl", "calendarList", "backend"];
 /**
  * 0.1.7 宿主的读写面：数据取自本 entry 配置，不再有独立命名空间文档。
  * 与 settingsFaceOf 的差异：read 直接投影活配置；写用 mutate 逐字段 set/unset，
@@ -64,6 +64,10 @@ export interface CalendarSettingsBackendOptions {
     probeFactory?: (config: CalendarConfig) => Promise<{
         count: number;
         sample: string[];
+        calendars?: Array<{
+            name: string;
+            count: number;
+        }>;
     }>;
     env?: NodeJS.ProcessEnv;
     settings?: CalendarSettingsFace;
@@ -106,6 +110,13 @@ export declare class CalendarSettingsBackend {
     currentConfig(): CalendarConfig;
     /** 切换数据源并落盘。切到远程前先验证，避免切过去后满屏读取失败。 */
     private commitBackend;
+    /** 集合地址归一化：比较时忽略首尾空白与结尾斜杠。 */
+    private static normalizeCalendarId;
+    /**
+     * 把选中的远程日历逐本归档到本地：原样写入本地文件并带上来源标签。
+     * 已存在（同 UID）、疑似重复、缺 UID 的跳过；任一条失败就整批中止，不切数据源。
+     */
+    private archiveRemoteToLocal;
     /** 惰性解析配置；凭据/端点变化即重建（闭包内比较，不落盘不记日志）。 */
     private service;
     /**
@@ -113,6 +124,8 @@ export declare class CalendarSettingsBackend {
      * 未配置时 configured:false + reason，面板据此渲染引导态。
      */
     connection(): Record<string, unknown>;
+    /** 已连接日历摘要：解析失败一律空数组，由 configured/reason 说明原因。 */
+    private calendarBriefs;
     /** 兼容旧动作名：status 就是连接摘要。 */
     status(): Record<string, unknown>;
     /**
@@ -120,7 +133,10 @@ export declare class CalendarSettingsBackend {
      * 连接测试与保存共用此路径，两者看到的配置一致。
      */
     private proposed;
-    /** 真连一次：拿拟议配置列一下未来 30 天，能列出来就算通。 */
+    /**
+     * 真连一次：把每本日历都列一下未来 30 天，全部能列出来才算通。
+     * 返回值带上逐本计数，面板才能说清「3 本日历、共 N 条」，而不是只报一个总数。
+     */
     private probe;
     private responseJson;
     /** 路由入口。GET = 读状态，POST = 动作（list/create/update/delete）。 */

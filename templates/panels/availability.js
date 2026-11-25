@@ -39,7 +39,7 @@ function AvailabilityPanel({anchor,onClose,onChoose,onBusy,embedded=false}) {
   const format=iso=>formatter.format(new Date(iso));
   return h('section',{className:'calendar-availability'+(embedded?' in-modal':''),'aria-label':text('找空闲时段','Find available time'),'aria-busy':busy,...(embedded?{}:{onKeyDown:e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close()}}})},[
     h('style',{key:'style'},AVAILABILITY_CSS),embedded?null:h('div',{key:'heading',className:'availability-heading'},[h('h3',{key:'title'},text('找空闲时段','Find available time')),h(W.Button,{key:'close',onClick:close},text('关闭','Close'))]),
-    h('p',{key:'scope'},text('按当前连接的日历查找，不代表其他日历或参会者空闲。选择候选只填写新建草稿。','Checks the connected calendar, not other calendars or attendees. Choosing a time only fills a new-event draft.')),
+    h('p',{key:'scope'},text('按已连接的全部日历合并查找（多本日历一起算占用），但仍不代表参会者或其他人的日历空闲。选择候选只填写新建草稿。','Checks all connected calendars combined; attendees\' calendars are still unknown. Choosing a time only fills a new-event draft.')),
     h('p',{key:'zone'},text('查询与显示时区：','Search and display time zone: ')+zone),
     h('form',{key:'form',onSubmit:search},[
       h('div',{key:'fields',className:'availability-fields'},[field('from',text('开始日期','Start date'),'date'),field('to',text('结束日期（包含当天）','End date (inclusive)'),'date'),field('durationMinutes',text('日程时长（分钟）','Duration (minutes)'),'number',{min:5,max:480,step:1}),field('workStart',text('工作开始','Work starts'),'time'),field('workEnd',text('工作结束','Work ends'),'time'),field('bufferMinutes',text('定时日程前后缓冲（分钟）','Buffer around timed events (minutes)'),'number',{min:0,max:120,step:1})]),

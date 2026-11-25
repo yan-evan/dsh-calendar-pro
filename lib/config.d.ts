@@ -49,10 +49,33 @@ export interface CalendarConfig {
     /** nextcloud：日历名。 */
     calendar?: string;
     /**
+     * 同一账户下的多本日历（JSON 数组字符串），形如
+     * `[{"url":"https://caldav.icloud.com/123/calendars/home/","name":"家庭"}]`。
+     *
+     * 用字符串而不是对象数组，是为了让「entry 配置 / settings / 兜底文件」三条落盘路径
+     * 都按扁平字符串处理：嵌套对象数组在各代宿主的读写面上没有保证，凭据也不该跟着数组走。
+     * 缺省（或解析为空）时只用 caldavUrl 指的那一本，行为与旧版本完全一致。
+     */
+    calendarList?: string;
+    /**
      * HTTP 代理地址，如 http://127.0.0.1:7890。只作用于本插件的请求；能直连时留空。
      */
     proxyUrl?: string;
 }
+/** 同一账户下的一本日历集合。 */
+export interface CalendarRef {
+    /** 规范化后的集合 URL（保留末尾斜杠、去掉查询串与片段）。 */
+    url: string;
+    /** 展示名；缺省时由 URL 推导，见 calendarNameOf。 */
+    name?: string;
+}
+/** 一个读取目标：某本日历 + 解析完成的凭据。 */
+export interface CalendarTarget {
+    ref: CalendarRef;
+    config: ResolvedConfig;
+}
+/** 一次能连接的最大日历数；超过多半是配置写错了，也避免把工具调用拖成几十个请求。 */
+export declare const MAX_CALENDARS = 16;
 /** 解析完成、可直接建客户端的配置。 */
 export interface ResolvedConfig {
     provider: CalendarProvider;
@@ -86,6 +109,8 @@ export declare function resolveBackendKind(config: CalendarConfig | undefined): 
  * @param env 环境变量来源，测试可注入
  */
 export declare function resolveConfig(config: CalendarConfig | undefined, env?: NodeJS.ProcessEnv): ResolvedConfig;
+/** 默认日历的集合地址（不解析凭据）：自检与提示文案用它，避免为了报地址先要求账号。 */
+export declare function resolveCollectionUrl(config: CalendarConfig | undefined): string;
 /** Google 必须使用 OAuth；其他 provider 不会被环境中的 Google 凭据切换认证方式。 */
 export declare function resolveAuthMethod(config: CalendarConfig | undefined): CalendarAuthMethod;
 /** OAuth 凭据与 Bearer token 仅允许发往无 URL 内嵌凭据的 HTTPS 端点。 */
@@ -94,3 +119,29 @@ export declare function validateOAuthUrl(value: string, field: string): void;
 export declare function resolveCredentials(config: CalendarConfig | undefined, env?: NodeJS.ProcessEnv): Pick<ResolvedConfig, 'username' | 'password' | 'oauth'>;
 /** 依据 provider 预设或手填字段拼出日历集合 URL。 */
 export declare function buildCaldavUrl(config: CalendarConfig, provider: CalendarProvider): string;
+/**
+ * 集合 URL 规范化：只接受 http(s)，不接受内嵌账号密码或片段；查询串一并丢掉。
+ * 返回 undefined 表示这条不是可用的日历地址。
+ */
+export declare function normalizeCollectionUrl(value: unknown): string | undefined;
+/** 展示名缺省值：取 URL 最后一段路径（解码后）；取不到就用主机名。 */
+export declare function calendarNameOf(url: string): string;
+/**
+ * 解析 calendarList：同时接受 JSON 字符串与数组（YAML 手写、面板保存两种来源）。
+ *
+ * 条目级问题跳过而不是整体失败：一条写坏的地址不该让其余日历也连不上。
+ * 但整份内容不是 JSON / 不是数组时抛 ConfigError——那是用户能照着改的结构错误。
+ */
+export declare function parseCalendarList(raw: unknown): CalendarRef[];
+/**
+ * 声明了哪些日历；一本都没有时抛中文指引。
+ * calendarList 为空时退化成「caldavUrl 那一本」，旧配置不需要任何迁移动作。
+ */
+export declare function resolveCalendars(config: CalendarConfig | undefined): CalendarRef[];
+/** 面板展示用：任何解析错误都收成空列表，由调用方决定怎么提示。 */
+export declare function availableCalendars(config: CalendarConfig | undefined): CalendarRef[];
+/**
+ * 多日历目标：凭据解析一次、共用，集合 URL 各自一份。
+ * OAuth 场景逐条校验 URL（令牌会发往这些端点），不合法立即抛错，绝不带到请求里。
+ */
+export declare function resolveCalendarTargets(config: CalendarConfig | undefined, env?: NodeJS.ProcessEnv): CalendarTarget[];

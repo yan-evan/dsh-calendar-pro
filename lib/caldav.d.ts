@@ -62,6 +62,8 @@ export declare class CalendarService {
         end: string;
     }): Promise<CalendarEvent[]>;
     private toEvents;
+    /** 空闲查询所需的占用实例：完整读取并展开当前集合，任何不完整都抛错。 */
+    busy(input: AvailabilityInput, signal?: AbortSignal): Promise<CalendarEvent[]>;
     /** A complete read of the connected collection; never writes or reserves events. */
     availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult>;
     /** 列出并展开：每个对象经 expandEventFromICal 展开为若干实例行。 */

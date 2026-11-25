@@ -7,6 +7,7 @@
  */
 import type { CalendarBackend } from './backend.js';
 import type { BackendKind } from './config.js';
+import type { CalendarEvent } from './ical.js';
 export interface MigrateItem {
     /** 源端的资源标识（拿原文用）。 */
     uid: string;
@@ -42,6 +43,8 @@ export interface MigrateResult {
         message: string;
     }>;
 }
+/** 「看起来是同一件事」的判据：标题（去空白、忽略大小写）+ 起止时间完全一致。 */
+export declare function shapeOf(event: CalendarEvent): string;
 /** 只读预检：不写任何东西，把三类情况数清楚，交给用户决定要不要继续。 */
 export declare function planMigration(from: CalendarBackend, to: CalendarBackend, signal?: AbortSignal): Promise<MigratePlan>;
 /**

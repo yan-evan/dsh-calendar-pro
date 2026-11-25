@@ -86,7 +86,12 @@ test('service availability reads complete resources and performs no calendar mut
  service.clientPromise=Promise.resolve({async fetchCalendarObjects(){return[{url:'bad',data:'invalid'}]}});await assert.rejects(service.availability(base),/无法|缺少|解析/)
 })
 test('the native read-only tool uses the same service and schema',async t=>{
- const calls=[];t.mock.method(CalendarService.prototype,'availability',async(input,signal)=>{calls.push({input,signal});return findAvailableTimes([],input)})
+ const calls=[];t.mock.method(CalendarService.prototype,'busy',async(input,signal)=>{calls.push({input,signal});return[]})
  const tool=buildCalendarTools({provider:'custom',caldavUrl:'https://calendar.example/',username:'fixture',password:'fixture'},{}).find(t=>t.name==='calendar_find_time'),controller=new AbortController()
- assert.deepEqual(tool.parameters.required,['start','end','timeZone']);const result=await tool.execute(base,{signal:controller.signal});assert.equal(result.scope,'connected-calendar');assert.equal(calls[0].signal,controller.signal);assert.match(tool.output.render({},result)[0].text,/尚未预约|数量已达/)
+ assert.deepEqual(tool.parameters.required,['start','end','timeZone']);const result=await tool.execute(base,{signal:controller.signal})
+ // 单本连接不经过聚合口径：scope 保持 connected-calendar，且不额外写 calendars。
+ assert.equal(result.scope,'connected-calendar');assert.equal(result.calendars,undefined)
+ assert.equal(calls.length,1);assert.deepEqual(calls[0].input,base)
+ const seen=calls[0].signal;assert.ok(seen instanceof AbortSignal);controller.abort(new Error('fixture canceled'));assert.equal(seen.aborted,true)
+ assert.match(tool.output.render({},result)[0].text,/尚未预约|数量已达/)
 })

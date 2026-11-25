@@ -52,10 +52,36 @@ export interface CalendarConfig {
   /** nextcloud：日历名。 */
   calendar?: string
   /**
+   * 同一账户下的多本日历（JSON 数组字符串），形如
+   * `[{"url":"https://caldav.icloud.com/123/calendars/home/","name":"家庭"}]`。
+   *
+   * 用字符串而不是对象数组，是为了让「entry 配置 / settings / 兜底文件」三条落盘路径
+   * 都按扁平字符串处理：嵌套对象数组在各代宿主的读写面上没有保证，凭据也不该跟着数组走。
+   * 缺省（或解析为空）时只用 caldavUrl 指的那一本，行为与旧版本完全一致。
+   */
+  calendarList?: string
+  /**
    * HTTP 代理地址，如 http://127.0.0.1:7890。只作用于本插件的请求；能直连时留空。
    */
   proxyUrl?: string
 }
+
+/** 同一账户下的一本日历集合。 */
+export interface CalendarRef {
+  /** 规范化后的集合 URL（保留末尾斜杠、去掉查询串与片段）。 */
+  url: string
+  /** 展示名；缺省时由 URL 推导，见 calendarNameOf。 */
+  name?: string
+}
+
+/** 一个读取目标：某本日历 + 解析完成的凭据。 */
+export interface CalendarTarget {
+  ref: CalendarRef
+  config: ResolvedConfig
+}
+
+/** 一次能连接的最大日历数；超过多半是配置写错了，也避免把工具调用拖成几十个请求。 */
+export const MAX_CALENDARS = 16
 
 /** 解析完成、可直接建客户端的配置。 */
 export interface ResolvedConfig {
@@ -118,7 +144,7 @@ export function resolveBackendKind(config: CalendarConfig | undefined): BackendK
     )
   }
   const record = (config ?? {}) as Record<string, unknown>
-  for (const key of ['caldavUrl', 'host', 'calendarId', 'username', 'refreshToken'] as const) {
+  for (const key of ['caldavUrl', 'host', 'calendarId', 'username', 'refreshToken', 'calendarList'] as const) {
     if (nonEmpty(record[key]) !== undefined) return 'caldav'
   }
   return undefined
@@ -132,9 +158,26 @@ export function resolveBackendKind(config: CalendarConfig | undefined): BackendK
 export function resolveConfig(config: CalendarConfig | undefined, env: NodeJS.ProcessEnv = process.env): ResolvedConfig {
   const provider = normalizeProvider(config?.provider)
   const credentials = resolveCredentials(config, env)
-  const caldavUrl = buildCaldavUrl(config ?? {}, provider)
+  const caldavUrl = declaredCollectionUrl(config ?? {}, provider)
   if (credentials.oauth !== undefined) validateOAuthUrl(caldavUrl, 'caldavUrl')
   return { provider, caldavUrl, ...credentials, proxyUrl: nonEmpty(config?.proxyUrl) ?? '' }
+}
+
+/**
+ * 单集合 URL：优先 caldavUrl，其次 calendarList 的第一本，最后按 provider 预设拼装。
+ * 迁移、导入、导出与空闲查询都还需要「一本」的具体地址，统一从这里取，语义固定为「默认日历」。
+ */
+function declaredCollectionUrl(config: CalendarConfig, provider: CalendarProvider): string {
+  const explicit = nonEmpty(config.caldavUrl)
+  if (explicit !== undefined) return explicit
+  const listed = parseCalendarList(config.calendarList)
+  if (listed.length > 0) return listed[0]!.url
+  return buildCaldavUrl(config, provider)
+}
+
+/** 默认日历的集合地址（不解析凭据）：自检与提示文案用它，避免为了报地址先要求账号。 */
+export function resolveCollectionUrl(config: CalendarConfig | undefined): string {
+  return declaredCollectionUrl(config ?? {}, normalizeProvider(config?.provider))
 }
 
 /** Google 必须使用 OAuth；其他 provider 不会被环境中的 Google 凭据切换认证方式。 */
@@ -242,4 +285,121 @@ export function buildCaldavUrl(config: CalendarConfig, provider: CalendarProvide
     'dsh-calendar-pro 未配置 caldavUrl：provider=custom 时需提供完整日历集合 URL，' +
     '请在 profile 的 cordis.patch.yml 覆盖 calendar 行的 caldavUrl 并重启。',
   )
+}
+
+/**
+ * 集合 URL 规范化：只接受 http(s)，不接受内嵌账号密码或片段；查询串一并丢掉。
+ * 返回 undefined 表示这条不是可用的日历地址。
+ */
+export function normalizeCollectionUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  if (text === '') return undefined
+  let url: URL
+  try {
+    url = new URL(text)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+  if (url.username !== '' || url.password !== '' || url.hash !== '') return undefined
+  url.search = ''
+  return url.href
+}
+
+/** 展示名缺省值：取 URL 最后一段路径（解码后）；取不到就用主机名。 */
+export function calendarNameOf(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const segments = parsed.pathname.split('/').filter((segment) => segment !== '')
+    const last = segments.at(-1)
+    return last === undefined ? parsed.hostname : decodeURIComponent(last)
+  } catch {
+    return url
+  }
+}
+
+/**
+ * 解析 calendarList：同时接受 JSON 字符串与数组（YAML 手写、面板保存两种来源）。
+ *
+ * 条目级问题跳过而不是整体失败：一条写坏的地址不该让其余日历也连不上。
+ * 但整份内容不是 JSON / 不是数组时抛 ConfigError——那是用户能照着改的结构错误。
+ */
+export function parseCalendarList(raw: unknown): CalendarRef[] {
+  if (raw === undefined || raw === null || raw === '') return []
+  let value: unknown = raw
+  if (typeof raw === 'string') {
+    const text = raw.trim()
+    if (text === '') return []
+    try {
+      value = JSON.parse(text)
+    } catch {
+      throw new ConfigError('dsh-calendar-pro 的 calendarList 不是合法 JSON：应为 [{"url":"https://…","name":"家庭"}] 形式的数组。')
+    }
+  }
+  if (!Array.isArray(value)) {
+    throw new ConfigError('dsh-calendar-pro 的 calendarList 必须是数组：每项是日历集合 URL 或 {"url":…,"name":…}。')
+  }
+  const out: CalendarRef[] = []
+  let declared = 0
+  for (const item of value) {
+    let rawUrl: unknown
+    let rawName: unknown
+    if (typeof item === 'string') rawUrl = item
+    else if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+      rawUrl = (item as Record<string, unknown>).url
+      rawName = (item as Record<string, unknown>).name
+    } else continue
+    declared += 1
+    const url = normalizeCollectionUrl(rawUrl)
+    if (url === undefined) continue
+    if (out.some((ref) => ref.url === url)) continue
+    const name = typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim().slice(0, 40) : undefined
+    out.push(name === undefined ? { url } : { url, name })
+    if (out.length >= MAX_CALENDARS) break
+  }
+  if (out.length === 0 && declared > 0) {
+    throw new ConfigError('dsh-calendar-pro 的 calendarList 里没有有效的日历集合 URL：需以 http:// 或 https:// 开头，且不含账号、密码与查询参数。')
+  }
+  return out
+}
+
+/**
+ * 声明了哪些日历；一本都没有时抛中文指引。
+ * calendarList 为空时退化成「caldavUrl 那一本」，旧配置不需要任何迁移动作。
+ */
+export function resolveCalendars(config: CalendarConfig | undefined): CalendarRef[] {
+  const listed = parseCalendarList(config?.calendarList)
+  if (listed.length > 0) return listed
+  const provider = normalizeProvider(config?.provider)
+  const url = buildCaldavUrl(config ?? {}, provider)
+  const normalized = normalizeCollectionUrl(url) ?? url
+  // Google 的集合路径固定以 /events 结尾，用它当日历名没有信息量，改用 calendarId（邮箱）。
+  const name = provider === 'google' ? nonEmpty(config?.calendarId) : calendarNameOf(url)
+  return name === undefined ? [{ url: normalized }] : [{ url: normalized, name }]
+}
+
+/** 面板展示用：任何解析错误都收成空列表，由调用方决定怎么提示。 */
+export function availableCalendars(config: CalendarConfig | undefined): CalendarRef[] {
+  try {
+    return resolveCalendars(config)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 多日历目标：凭据解析一次、共用，集合 URL 各自一份。
+ * OAuth 场景逐条校验 URL（令牌会发往这些端点），不合法立即抛错，绝不带到请求里。
+ */
+export function resolveCalendarTargets(config: CalendarConfig | undefined, env: NodeJS.ProcessEnv = process.env): CalendarTarget[] {
+  // 先解析凭据再解析地址：缺账号时先给「填 username/密码」的指引，与旧版错误优先级一致。
+  const credentials = resolveCredentials(config, env)
+  const refs = resolveCalendars(config)
+  const provider = normalizeProvider(config?.provider)
+  const proxyUrl = nonEmpty(config?.proxyUrl) ?? ''
+  return refs.map((ref) => {
+    if (credentials.oauth !== undefined) validateOAuthUrl(ref.url, 'caldavUrl')
+    return { ref, config: { provider, caldavUrl: ref.url, ...credentials, proxyUrl } }
+  })
 }

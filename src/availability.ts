@@ -11,7 +11,15 @@ export interface AvailabilityResult {
   start: string; end: string; timeZone: string; durationMinutes: number; workStart: string; workEnd: string
   weekdays: number[]; bufferMinutes: number; stepMinutes: number; checkedAt: string
   busyEventCount: number; count: number; hasMore: boolean; slots: Array<{ start: string; end: string }>
-  scope: 'connected-calendar'; complete: boolean
+  /**
+   * 结果依据哪些日历：
+   * connected-calendar = 只有当前连接的那一本（旧行为的默认值）；
+   * all-enabled-calendars = 全部已连接日历的并集；selected-calendars = 本次指定日历的并集。
+   */
+  scope: 'connected-calendar' | 'all-enabled-calendars' | 'selected-calendars'
+  /** 参与计算的日历名（多日历时才有）。 */
+  calendars?: string[]
+  complete: boolean
 }
 export function availabilityRequest(input: AvailabilityInput) {
   for (const key of ['start', 'end'] as const) {

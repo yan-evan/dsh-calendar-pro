@@ -151,6 +151,8 @@ let calendarHostContext;
             ".dshc-modal-wide{width:min(760px,94vw)}",
             // 宿主自带的 Modal：宽度由宿主组件定，只能按标记覆盖这一层。
             "[role=dialog]:has([data-dshc-size=wide]){width:min(760px,94vw)!important;max-width:min(760px,94vw)!important}",
+            ".dshc-modal-form{width:min(620px,94vw)}",
+            "[role=dialog]:has([data-dshc-size=form]){width:min(620px,94vw)!important;max-width:min(620px,94vw)!important}",
 ,
             ".dshc-field{margin-bottom:9px}",
             ".dshc-field label{display:block;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:4px}",
@@ -160,6 +162,8 @@ let calendarHostContext;
             "textarea.dshc-input{min-height:72px;resize:vertical}",
             ".dshc-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}",
             ".dshc-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-primary,#111)}",
+            ".dshc-source-confirm{display:flex;flex-direction:column;gap:8px}",
+            ".dshc-source-confirm .dshc-cal-item{font-size:inherit;color:inherit;margin-bottom:0}",
             ".dshc-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}",
             ".dshc-kv{display:grid;grid-template-columns:72px 1fr;gap:6px 10px;font-size:12px;margin:12px 0 0}",
             ".dshc-kv dt{color:var(--dsw-alias-label-tertiary,#6b7280)}",
@@ -269,7 +273,7 @@ let calendarHostContext;
                 "top.dismiss": "本次不再提示",
                 "panel.compactHint": "日历还没设置好。到侧栏的「日历」里完成配置。",
                 "state.readonly": "只读",
-                "field.summary": "标题", "field.date": "日期", "field.start": "开始", "field.end": "结束",
+                "field.summary": "标题", "field.calendar": "日历", "field.date": "日期", "field.start": "开始", "field.end": "结束",
                 "field.allDay": "全天", "field.location": "地点", "field.description": "备注",
                 "field.repeat": "重复", "field.uid": "事件 uid", "field.when": "时间", "field.duration": "时长",
                 "repeat.none": "不重复", "repeat.daily": "每天", "repeat.weekly": "每周", "repeat.monthly": "每月", "repeat.yearly": "每年", "repeat.custom": "自定义 RRULE",
@@ -279,7 +283,7 @@ let calendarHostContext;
                 "confirm.delete": "删除「{name}」？这个操作会同步到你的日历服务器。",
                 "confirm.deleteSeries": "将删除「{name}」整个重复系列的所有场次，包含当前视图外的场次。无法撤销。",
                 "form.series": "正在编辑整个重复系列，所有场次都会受影响。含取消或单独改期场次时，请到原日历客户端调整时间和规则。",
-                "form.newTitle": "新建日程", "form.editTitle": "编辑日程",
+                "form.newTitle": "新建日程", "form.calendarHint": "新建的日程写进这一本", "form.editTitle": "编辑日程",
                 "form.required": "标题和时间都要填。",
                 "day.today": "今天", "day.tomorrow": "明天", "day.yesterday": "昨天",
                 "count.events": "{n} 个日程", "count.occurrences": "含 {n} 次重复展开",
@@ -298,7 +302,6 @@ let calendarHostContext;
                 "move.failed": "改期失败：{message}",
                 "conn.button": "连接设置",
                 "conn.title": "CalDAV 连接设置",
-                "conn.intro": "先测试连接，通过后再保存。",
                 "conn.provider": "服务商",
                 "provider.custom": "自建 CalDAV",
                 "conn.caldavUrl": "日历集合 URL",
@@ -326,12 +329,19 @@ let calendarHostContext;
                 "conn.storageFallback": "连接信息保存在运行 DSH 的设备上，保存后立即生效。",
                 "conn.needProvider": "先选一个服务商",
                 "conn.current": "当前：{summary}",
-                "conn.discover": "自动发现日历", "conn.discovering": "正在查找…",
-                "conn.discoverHint": "填好账号和 App 专用密码后点这里，会列出你的日历",
+                "conn.discovering": "正在查找日历…",
+                "conn.discoverHint": "填好账号和 App 专用密码后会自动列出你的日历（可多选）",
                 "conn.discoverStale": "服务端还是旧版本：请完全退出 DSH 后重新打开，再点一次",
-                "conn.discoverFound": "已找到 {n} 本日历：「日历集合 URL」已填好第一本，点开可切换",
+                "conn.discoverFound": "已找到 {n} 本日历（默认全选，可取消不要的）",
                 "conn.manualUrl": "改为手动填写",
-                "conn.steps": "怎么拿到这些值？（点开看步骤）",
+                "conn.calendars": "要连接的日历",
+                "conn.calendarsHint": "勾选要连接的日历（至少一本）。同一账户下的多本会一起出现在日程列表与空闲查询里，新建事件默认写第一本。",
+                "conn.calendarsEmpty": "至少勾选一本日历",
+                "conn.calendarCount": " · {n} 本日历",
+                "conn.calPick": "选择要连接的日历",
+                "conn.calAll": "全选",
+                "conn.calNone": "清空",
+                "conn.steps": "怎么拿到这些值",
                 "link.googleConsole": "打开 Google Cloud 凭据页 ↗",
                 "link.googlePlayground": "打开 OAuth Playground ↗",
                 "link.appleId": "打开 Apple ID 设置 ↗",
@@ -349,7 +359,7 @@ let calendarHostContext;
                 "hint.caldavUrl.custom": "结尾的 / 不能丢",
                 "hint.username.custom": "登录账号 / 邮箱",
                 "steps.google": ["Google Cloud 控制台新建项目，启用 Google Calendar API", "创建 OAuth 客户端 ID，类型选「桌面应用」，拿到 clientId 与 clientSecret", "在 OAuth Playground 勾选 Use your own OAuth credentials 并填上面两项，授权 calendar 权限，换 refreshToken", "日历 ID 一般就是 Gmail 地址，填完点「测试连接」"],
-                "steps.icloud": ["appleid.apple.com → 登录与安全 → App 专用密码，生成一个", "账号填 Apple ID 邮箱，密码填刚生成的专用密码", "在下面的「自动发现日历」里选一本；手动方法见使用手册"],
+                "steps.icloud": ["appleid.apple.com → 登录与安全 → App 专用密码，生成一个", "账号填 Apple ID 邮箱，密码填刚生成的专用密码", "填完账号密码会自动列出你的日历，勾上要连的那几本（默认全选）；只想手填地址的话见使用手册"],
                 "steps.nextcloud": ["服务器地址填 https://你的域名，结尾不要带 /", "用户名与日历名：个人日历默认是 personal", "密码用 App 密码或登录密码"],
                 "steps.custom": ["填完整的日历集合 URL，形如 https://cloud.example.com/remote.php/dav/calendars/用户名/日历名/", "填账号与密码，点「测试连接」"],
                 "conn.googleHint": "Google 只接受 OAuth，不接受应用专用密码。",
@@ -403,7 +413,7 @@ let calendarHostContext;
                 "panel.compactHint": "Calendar is not set up yet. Finish setup in the sidebar calendar.",
                 "state.notConfiguredHint": "Open Connection settings, choose your calendar service and enter your account details, then test and save the connection. You can also explore the sample calendar first.",
                 "state.readonly": "read-only",
-                "field.summary": "Title", "field.date": "Date", "field.start": "Start", "field.end": "End",
+                "field.summary": "Title", "field.calendar": "Calendar", "field.date": "Date", "field.start": "Start", "field.end": "End",
                 "field.allDay": "All day", "field.location": "Location", "field.description": "Notes",
                 "field.repeat": "Repeats", "field.uid": "Event uid", "field.when": "When", "field.duration": "Duration",
                 "repeat.none": "Does not repeat", "repeat.daily": "Daily", "repeat.weekly": "Weekly", "repeat.monthly": "Monthly", "repeat.yearly": "Yearly", "repeat.custom": "Custom RRULE",
@@ -413,7 +423,7 @@ let calendarHostContext;
                 "confirm.delete": "Delete「{name}」? This is pushed to your calendar server.",
                 "confirm.deleteSeries": "Delete every occurrence of {name}, including dates outside this view? This cannot be undone.",
                 "form.series": "Editing the entire recurring series. All occurrences are affected. If it has cancelled or rescheduled occurrences, change times and rules in your original calendar app.",
-                "form.newTitle": "New event", "form.editTitle": "Edit event",
+                "form.newTitle": "New event", "form.calendarHint": "The new event is written into this calendar", "form.editTitle": "Edit event",
                 "form.required": "A title and a time range are required.",
                 "day.today": "Today", "day.tomorrow": "Tomorrow", "day.yesterday": "Yesterday",
                 "count.events": "{n} events", "count.occurrences": "{n} expanded occurrences",
@@ -432,7 +442,6 @@ let calendarHostContext;
                 "move.failed": "Could not reschedule: {message}",
                 "conn.button": "Connection",
                 "conn.title": "CalDAV connection",
-                "conn.intro": "Test the connection first, then save.",
                 "conn.provider": "Provider",
                 "provider.custom": "Custom CalDAV",
                 "conn.caldavUrl": "Calendar collection URL",
@@ -460,11 +469,18 @@ let calendarHostContext;
                 "conn.storageFallback": "Connection details are stored on the device running DSH. Saved changes take effect immediately.",
                 "conn.needProvider": "Pick a provider first",
                 "conn.current": "Now: {summary}",
-                "conn.discover": "Find my calendars", "conn.discovering": "Finding…",
-                "conn.discoverHint": "Enter your account and app-specific password, then pick a calendar",
+                "conn.discovering": "Finding calendars…",
+                "conn.discoverHint": "Your calendars are listed automatically once the account and app-specific password are filled in (multi-select)",
                 "conn.discoverStale": "The server still runs an older build. Fully quit and reopen DSH, then try again.",
-                "conn.discoverFound": "Found {n} calendars. The first is selected in Calendar collection URL; open the dropdown to switch.",
+                "conn.discoverFound": "Found {n} calendars (all selected by default — untick the ones you do not need)",
                 "conn.manualUrl": "Enter URL manually",
+                "conn.calendars": "Calendars to connect",
+                "conn.calendarsHint": "Tick the calendars to connect (at least one). Calendars from the same account share the event list and availability search; new events go to the first one.",
+                "conn.calendarsEmpty": "Select at least one calendar",
+                "conn.calendarCount": " · {n} calendars",
+                "conn.calPick": "Select calendars",
+                "conn.calAll": "Select all",
+                "conn.calNone": "Clear",
                 "top.subtitle": "Manage events with the agent · synced across devices · ",
                 "top.star": "Like it? Star it", "top.update": "Update available: v{latest} (current v{current})",
                 "top.dismiss": "Dismiss for today",
@@ -486,7 +502,7 @@ let calendarHostContext;
                 "hint.caldavUrl.custom": "Keep the trailing slash",
                 "hint.username.custom": "login account / email",
                 "steps.google": ["New project in Google Cloud console, enable Google Calendar API", "Create an OAuth client ID of type 'Desktop app'; copy clientId and clientSecret", "In OAuth Playground, tick 'Use your own OAuth credentials', authorize the calendar scope, exchange a refreshToken", "The calendar ID is usually your Gmail address; then hit Test connection"],
-                "steps.icloud": ["appleid.apple.com → Sign-In and Security → App-Specific Passwords, create one", "Account: your Apple ID email. Password: the app-specific password", "Pick a calendar with Find my calendars below; the manual has manual commands"],
+                "steps.icloud": ["appleid.apple.com → Sign-In and Security → App-Specific Passwords, create one", "Account: your Apple ID email. Password: the app-specific password", "Your calendars are listed automatically once the account and password are in — tick the ones to connect (all selected by default); the manual covers typing a URL by hand"],
                 "steps.nextcloud": ["Server: https://your-domain (no trailing slash)", "Username and calendar name; the default personal calendar is 'personal'", "Password: an app password or your login password"],
                 "steps.custom": ["Paste the full collection URL, e.g. https://cloud.example.com/remote.php/dav/calendars/user/calendar/", "Fill in account and password, then Test connection"],
                 "conn.googleHint": "Google only accepts OAuth, not app passwords.",
@@ -864,7 +880,8 @@ let calendarHostContext;
          * 宿主 Modal 下宽度由宿主决定，只能靠 data 标记 + CSS 覆盖。
          */
         function Dlg(props) {
-            const sizeAttr = props.size === "wide" ? "wide" : undefined;
+            // wide = 760px（找空闲时段），form = 620px（连接表单：字段多、还要放下拉清单）
+            const sizeAttr = props.size === "wide" || props.size === "form" ? props.size : undefined;
             if (PRIM && typeof PRIM.Modal === "function") {
                 return h(PRIM.Modal, {
                     open: props.open,
@@ -879,7 +896,7 @@ let calendarHostContext;
                 return null;
             return h("div", { className: "dshc-modalwrap", onMouseDown: (e) => { if (e.target === e.currentTarget)
                     props.onClose(); } }, [
-                h("div", { className: "dshc-modal" + (sizeAttr === "wide" ? " dshc-modal-wide" : "") }, [
+                h("div", { className: "dshc-modal" + (sizeAttr === "wide" ? " dshc-modal-wide" : sizeAttr === "form" ? " dshc-modal-form" : "") }, [
                     h("div", { style: { position: "relative" } }, [
                         h("div", { className: "dshc-drawertitle" }, props.title),
                         h("button", { type: "button", className: "dshc-btn ghost dshc-close", onClick: props.onClose, "aria-label": props.closeLabel || props.title }, "\u2715")
@@ -1541,7 +1558,7 @@ let calendarHostContext;
             ".dshc-fab.on{opacity:1;background:var(--dsw-alias-button-primary-fill,#2563eb);color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}",
             ".dshc-float{position:fixed;right:18px;bottom:136px;z-index:56;box-sizing:border-box;width:min(760px,calc(100vw - 36px));height:640px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:16px;box-shadow:var(--dsw-elevation-prominent,0 18px 48px rgba(0,0,0,.28));padding:14px}",
             ".dshc-float .dshc-root{height:100%;display:flex;flex-direction:column;min-height:0}.dshc-float .dshc-shell{border:0;padding:0;background:transparent;display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}.dshc-float .dshc-toolbar,.dshc-float .dshc-footer,.dshc-float .dshc-alert,.dshc-float .dshc-undo,.dshc-float .dshc-refresh{flex:0 0 auto}.dshc-float .dshc-view{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;overflow:hidden}.dshc-float .dshc-dowgrid{flex:0 0 auto}.dshc-float .dshc-monthgrid{flex:1;min-height:0;grid-template-rows:repeat(6,minmax(0,1fr))}.dshc-float .dshc-cell{min-height:0;overflow:hidden;padding:4px 5px}.dshc-float .dshc-chip{display:block;width:100%;height:15px;line-height:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 0 2px;font-size:11px}.dshc-float .dshc-more{font-size:10px;line-height:15px}.dshc-float .dshc-week{flex:1;min-height:0;max-height:none;overflow:hidden}.dshc-float .dshc-agenda{flex:1;min-height:0;max-height:none;overflow:auto}",
-            ".dshc-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-items:start}.dshc-fields .dshc-field.wide{grid-column:1/-1}@media (max-width:520px){.dshc-fields{grid-template-columns:1fr}}.dshc-steps{margin:2px 0 10px;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7280)}.dshc-discover{display:flex;flex-direction:column;gap:6px;margin:8px 0 2px;padding:8px;border:1px dashed var(--dsw-alias-border-l2,rgba(127,127,127,.38));border-radius:9px}.dshc-linkbtn{display:inline-block;margin-top:4px;padding:0;border:0;background:none;color:var(--dsw-alias-state-business-primary,#2563eb);font:inherit;font-size:11px;cursor:pointer;text-decoration:underline}",,
+            ".dshc-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-items:start}.dshc-fields .dshc-field.wide{grid-column:1/-1}@media (max-width:520px){.dshc-fields{grid-template-columns:1fr}}.dshc-steps{margin:6px 0 12px;padding:9px 11px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.22));border-radius:9px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.02));font-size:12px;line-height:1.65;color:var(--dsw-alias-label-tertiary,#6b7280)}.dshc-steps-title{font-size:11px;font-weight:600;margin-bottom:4px;color:var(--dsw-alias-label-secondary,#4b5563)}.dshc-steps ol{margin:0;padding-left:18px}.dshc-steps li+li{margin-top:2px}.dshc-discover{display:flex;flex-direction:column;gap:6px;margin:8px 0 2px;padding:8px;border:1px dashed var(--dsw-alias-border-l2,rgba(127,127,127,.38));border-radius:9px}.dshc-linkbtn{display:inline-block;margin-top:4px;padding:0;border:0;background:none;color:var(--dsw-alias-state-business-primary,#2563eb);font:inherit;font-size:11px;cursor:pointer;text-decoration:underline}.dshc-cal-select{position:relative}.dshc-cal-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:26px;text-align:left;cursor:pointer}.dshc-cal-trigger:hover{border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.6))}.dshc-cal-trigger.is-empty{color:var(--dsw-alias-label-tertiary,#6b7280)}.dshc-cal-trigger-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dshc-cal-caret{flex:none;color:var(--dsw-alias-label-tertiary,#6b7280)}.dshc-cal-pop{position:absolute;z-index:6;left:0;right:0;top:calc(100% + 4px);display:flex;flex-direction:column;max-height:248px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.38));border-radius:10px;box-shadow:var(--dsw-elevation-prominent,0 8px 24px rgba(0,0,0,.16));overflow:hidden}.dshc-cal-pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.22));color:var(--dsw-alias-label-tertiary,#6b7280)}.dshc-cal-pop-acts{display:flex;align-items:center;gap:10px}.dshc-cal-pop-acts .dshc-linkbtn{margin-top:0;font-size:inherit}.dshc-cal-pop-body{display:flex;flex-direction:column;min-height:0;max-height:200px;overflow-y:auto;overflow-x:hidden;padding:4px 6px}.dshc-cal-item{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;cursor:pointer}.dshc-field .dshc-cal-item{font-size:inherit;color:inherit;margin-bottom:0}.dshc-cal-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}.dshc-cal-item input{margin:0;flex:none}.dshc-cal-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",,
             ".dshc-steps summary{cursor:pointer;color:var(--dsw-alias-state-business-primary,#2563eb)}",
             ".dshc-steps ol{margin:6px 0 0;padding-left:18px;line-height:1.55}",
             ".dshc-link{color:var(--dsw-alias-state-business-primary,#2563eb);text-decoration:none}",
@@ -1786,7 +1803,7 @@ let calendarHostContext;
             } catch { return null; }
         }
         function EventForm(props) {
-            const { draft, events, onCancel, onSubmit, busy, error } = props;
+            const { draft, events, onCancel, onSubmit, busy, error, calendars } = props;
             const formId = useId();
             const [form, setForm] = useState(draft);
             useEffect(() => { setForm(draft); }, [draft.uid, draft.date, draft.startTime, draft.summary]);
@@ -1795,6 +1812,11 @@ let calendarHostContext;
             const pseudo = asPseudoEvent(form);
             const conflicts = form.summary.trim() === "" || !pseudo ? [] : events.filter((event) => overlaps(event, pseudo) && event.uid !== form.uid);
             const canSave = form.summary.trim() !== "" && !!pseudo && Date.parse(pseudo.end) >= Date.parse(pseudo.start);
+            // 多本日历时，新建要能选写进哪一本；只有一本就不多这一行。
+            const calendarOptions = Array.isArray(calendars) ? calendars.filter((item) => item && typeof item.id === "string" && item.id !== "") : [];
+            const calendarId = typeof form.calendarId === "string" && form.calendarId !== ""
+                ? form.calendarId
+                : calendarOptions.length > 1 ? calendarOptions[0].id : undefined;
             const body = h("div", null, [
                 form.sourceRange && !form.allDay && pseudo ? h('p',{className:'dshe-hint',role:'note'},calendarText('实际时段：','Resolved time: ')+[pseudo.start,pseudo.end].map(iso=>new Intl.DateTimeFormat(UI_LANG==='en'?'en-US':'zh-CN',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'shortOffset'}).format(new Date(iso))).join(' — ')+calendarText('。未修改的钟点保留原 UTC 偏移。',' · Unchanged times preserve their original UTC offsets.')) : null,
                 draft.isSeries ? h("div", { className: "dshc-alert" }, t("form.series")) : null,
@@ -1803,6 +1825,14 @@ let calendarHostContext;
                     h("label", { htmlFor: formId + "-summary" }, t("field.summary")),
                     h(Txt, { id: formId + "-summary", value: form.summary, autoFocus: true, onChange: (e) => patch({ summary: e.target.value }), placeholder: t("form.newTitle") })
                 ]),
+                isEdit !== true && calendarOptions.length > 1 ? h("div", { className: "dshc-field" }, [
+                    h("label", { htmlFor: formId + "-calendar" }, t("field.calendar")),
+                    h("select", {
+                        id: formId + "-calendar", className: "dshc-input", value: calendarId,
+                        onChange: (e) => patch({ calendarId: e.target.value })
+                    }, calendarOptions.map((item) => h("option", { key: item.id, value: item.id }, item.name || item.id))),
+                    h("div", { className: "dshc-sub", style: { marginTop: "3px" } }, t("form.calendarHint"))
+                ]) : null,
                 h("div", { className: "dshc-field" }, [
                     h("label", { htmlFor: formId + "-date" }, t("field.date")),
                     h(Txt, { id: formId + "-date", type: "date", value: form.date, onChange: (e) => patch({ date: e.target.value }) })
@@ -1842,7 +1872,7 @@ let calendarHostContext;
             ]);
             const footer = h("div", { className: "dshc-actions" }, [
                 h(Btn, { key: "cancel", variant: "ghost", onClick: onCancel, disabled: busy === true }, t("action.cancel")),
-                h(Btn, { key: "save", variant: "primary", onClick: () => onSubmit(form), disabled: busy === true || canSave !== true }, busy === true ? "\u2026" : t("action.save"))
+                h(Btn, { key: "save", variant: "primary", onClick: () => onSubmit(calendarId === undefined ? form : Object.assign({}, form, { calendarId })), disabled: busy === true || canSave !== true }, busy === true ? "\u2026" : t("action.save"))
             ]);
             return h(Dlg, {
                 open: true,
@@ -1929,7 +1959,8 @@ let calendarHostContext;
         const PROVIDER_NAMES = ["google", "icloud", "nextcloud", "custom"];
         /** 面板上的连接摘要 → 表单草稿。密钥一律留空，靠 placeholder 说明「已保存」。 */
         function connectionDraftOf(connection) {
-            const out = { provider: "" };
+            // 新连接默认 iCloud：绝大多数人第一次接的就是它，少一次手动选。
+            const out = { provider: "icloud" };
             for (const key of Object.keys(FIELD_LABEL))
                 out[key] = "";
             if (connection) {
@@ -1940,6 +1971,32 @@ let calendarHostContext;
             }
             return out;
         }
+        /** 已连接的日历 → 表单里的勾选项；旧连接没有 calendars 时退化成 caldavUrl 那一本。 */
+        function connectionCalendarsOf(connection) {
+            if (connection && Array.isArray(connection.calendars) && connection.calendars.length > 0)
+                return connection.calendars.map((item) => ({ url: item.id, name: item.name || item.id }));
+            if (connection && typeof connection.caldavUrl === "string" && connection.caldavUrl !== "")
+                return [{ url: connection.caldavUrl, name: "" }];
+            return [];
+        }
+        /** 日历 URL 比较键：忽略首尾空白与结尾斜杠，避免同一本因规范化差异对不上勾。 */
+        /** 清单里只显示日历名；没有名字时退回地址的最后一段。 */
+        function calNameOf(item) {
+            if (item !== null && item !== undefined && item.name)
+                return item.name;
+            const url = item !== null && item !== undefined && item.url ? String(item.url) : "";
+            const tail = url.replace(/\/+$/, "").split("/").pop() || url;
+            try {
+                return decodeURIComponent(tail);
+            }
+            catch (error) {
+                return tail;
+            }
+        }
+        function calUrlKey(url) {
+            const text = typeof url === "string" ? url.trim() : "";
+            return text === "" ? "" : text.replace(/\/+$/, "") + "/";
+        }
         /** 「当前：icloud · 你@icloud.com」里的那半句。 */
         function connectionSummary(connection) {
             if (connection === null || connection === undefined)
@@ -1948,7 +2005,9 @@ let calendarHostContext;
             const account = connection.calendarId || connection.username || connection.user
                 || (connection.host ? String(connection.host).replace(/^https?:\/\//, "") : "")
                 || connection.caldavUrl || "";
-            return account === "" ? provider : provider + " · " + account;
+            const count = Array.isArray(connection.calendars) ? connection.calendars.length : 0;
+            const calendars = count > 1 ? t("conn.calendarCount", { n: count }) : "";
+            return (account === "" ? provider : provider + " · " + account) + calendars;
         }
         /**
          * 连接设置表单：填 → 测试 → 保存。保存前服务端会再测一次（test:true），
@@ -1958,6 +2017,8 @@ let calendarHostContext;
             const { connection, onClose, onSaved } = props;
             const formId = useId();
             const [form, setForm] = useState(() => connectionDraftOf(connection));
+            // 多日历勾选：只有 iCloud / 自建 CalDAV 能列出一本以上的集合，其余服务商固定一本。
+            const [selected, setSelected] = useState(() => connectionCalendarsOf(connection));
             const [busy, setBusy] = useState("");
             const [result, setResult] = useState(null);
             // iCloud 自动发现：结果只在本次表单里，选中后填入 caldavUrl。
@@ -1965,6 +2026,8 @@ let calendarHostContext;
             const [discoverBusy, setDiscoverBusy] = useState(false);
             const [discoverError, setDiscoverError] = useState(null);
             const [manualUrl, setManualUrl] = useState(false);
+            const [calOpen, setCalOpen] = useState(false);
+            const calBoxRef = useRef(null);
             const maySave = connection === null || connection.settingsAvailable !== false;
             const patch = (fields) => {
                 setForm((prev) => Object.assign({}, prev, fields));
@@ -1973,12 +2036,62 @@ let calendarHostContext;
                     setDiscovered([]);
                     setDiscoverError(null);
                     setManualUrl(false);
+                    setSelected([]);
                 }
             };
+            /** 候选日历 = 发现结果 ∪ 已连接的 ∪ 已勾选的，按 URL 去重，保持出现顺序。 */
+            const candidates = (() => {
+                const out = [];
+                for (const item of discovered.concat(connectionCalendarsOf(connection), selected)) {
+                    if (!item || !item.url || out.some((existing) => calUrlKey(existing.url) === calUrlKey(item.url)))
+                        continue;
+                    out.push({ url: item.url, name: item.name || "" });
+                }
+                return out;
+            })();
+            const multiCapable = form.provider === "icloud" || form.provider === "custom";
+            // 有候选且没选手填时用勾选清单；它取代「日历集合 URL」格子。
+            const listMode = multiCapable && manualUrl !== true && candidates.length > 0;
+            const toggleCalendar = (item) => {
+                setResult(null);
+                const key = calUrlKey(item.url);
+                setSelected((prev) => (prev.some((existing) => calUrlKey(existing.url) === key)
+                    ? prev.filter((existing) => calUrlKey(existing.url) !== key)
+                    : prev.concat([{ url: item.url, name: item.name || "" }])));
+            };
+            /** 全选 / 清空：一次点完，不用逐条勾。 */
+            const selectAll = (on) => {
+                setResult(null);
+                setSelected(on === true ? candidates.map((item) => ({ url: item.url, name: item.name || "" })) : []);
+            };
+            // 勾选清单收进下拉里：表单不再被一串日历撑高，点开才展开。
+            useEffect(() => {
+                if (calOpen !== true)
+                    return undefined;
+                const onDown = (event) => {
+                    const box = calBoxRef.current;
+                    if (box !== null && box !== undefined && typeof box.contains === "function" && box.contains(event.target))
+                        return;
+                    setCalOpen(false);
+                };
+                document.addEventListener("mousedown", onDown, true);
+                return () => document.removeEventListener("mousedown", onDown, true);
+            }, [calOpen]);
+            /** 触发器上显示「已选哪几本 · 共几本」，太长就省略。 */
+            const selectedLabel = (() => {
+                if (selected.length === 0)
+                    return t("conn.calPick");
+                const names = selected.slice(0, 2).map((item) => item.name || item.url);
+                const head = names.join("、") + (selected.length > 2 ? "…" : "");
+                return head + t("conn.calendarCount", { n: selected.length });
+            })();
             const visible = PROVIDER_FIELDS[form.provider] || [];
             const payload = () => {
                 const out = {};
                 for (const key of Object.keys(FIELD_LABEL)) {
+                    // 勾选模式下 caldavUrl 由第一本决定，不跟着（可能已经过时的）URL 格子走。
+                    if (listMode && key === "caldavUrl")
+                        continue;
                     const value = form[key];
                     if (typeof value !== "string")
                         continue;
@@ -1993,6 +2106,18 @@ let calendarHostContext;
                     out.authMethod = "oauth";
                 else if (form.provider !== "" && connection && form.provider !== connection.provider)
                     out.authMethod = "basic";
+                if (multiCapable) {
+                    if (listMode && selected.length > 0) {
+                        out.calendarList = JSON.stringify(selected.map((item) => (item.name
+                            ? { url: item.url, name: item.name }
+                            : { url: item.url })));
+                        out.caldavUrl = selected[0].url;
+                    }
+                    else {
+                        // 退回单集合（手填）：清掉旧的多选清单，避免两套配置并存。
+                        out.calendarList = null;
+                    }
+                }
                 return out;
             };
             const test = async () => {
@@ -2023,6 +2148,12 @@ let calendarHostContext;
                     setBusy("");
                 }
             };
+            const autoDiscoverRef = useRef("");
+            const storedPassword = connection !== null && connection !== undefined && connection.hasPassword === true;
+            /** 账号密码填齐（或已有保存的密码）就能自动发现，不必再点按钮。 */
+            const canAutoDiscover = form.provider === "icloud"
+                && (form.username || "").trim() !== ""
+                && ((form.password || "").trim() !== "" || storedPassword === true);
             const discover = async () => {
                 setDiscoverBusy(true);
                 setDiscoverError(null);
@@ -2035,20 +2166,37 @@ let calendarHostContext;
                     });
                     const calendars = value.calendars || [];
                     setDiscovered(calendars);
+                    // 默认全选：多日历正是这个功能的意义，用户再按需取消。
+                    setSelected(calendars.map((item) => ({ url: item.url, name: item.name || "" })));
                     if (calendars.length > 0) patch({ caldavUrl: calendars[0].url });
                     setManualUrl(false);
                 }
                 catch (error) {
                     const raw = backendMessage(error) || t("error.load");
+                    autoDiscoverRef.current = "";
                     setDiscoverError(/未知动作/.test(raw) ? t("conn.discoverStale") : raw);
                 }
                 finally {
                     setDiscoverBusy(false);
                 }
             };
+            const autoDiscover = () => {
+                if (canAutoDiscover !== true || discoverBusy === true || busy !== "")
+                    return;
+                const key = (form.username || "").trim() + "|" + (form.password || "").trim();
+                if (autoDiscoverRef.current === key)
+                    return;
+                autoDiscoverRef.current = key;
+                discover();
+            };
+            // 打开表单时如果账号已在位，直接先查一遍：用户不用特意去虚焦。
+            useEffect(() => {
+                if (canAutoDiscover === true)
+                    autoDiscover();
+                // 只跑一次；后续靠字段虚焦触发。
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, []);
             const body = h("div", null, [
-                h("div", { className: "dshc-sub", style: { marginBottom: "10px" } }, t("conn.intro")),
-                h("p", { className: "dshc-sub", style: { marginBottom: "10px" } }, t("conn.credentials")),
                 maySave !== true
                     ? h("div", { className: "dshc-alert warn" }, t("conn.noSettings"))
                     : null,
@@ -2056,65 +2204,92 @@ let calendarHostContext;
                     h("label", { htmlFor: formId + "-provider" }, t("conn.provider")),
                     h("select", { id: formId + "-provider", className: "dshc-input", "aria-label": t("conn.provider"), value: form.provider, onChange: (e) => patch({ provider: e.target.value }) }, [h("option", { value: "", key: "__none" }, "— " + t("conn.needProvider") + " —")].concat(PROVIDER_NAMES.map((name) => h("option", { value: name, key: name }, name === "custom" ? t("provider.custom") : name === "icloud" ? "iCloud" : name === "nextcloud" ? "Nextcloud" : "Google"))))
                 ]),
-                PROVIDER_HINT[form.provider] ? h("div", { className: "dshc-sub", style: { marginBottom: "8px" } }, t(PROVIDER_HINT[form.provider])) : null,
-                form.provider === "" ? null : h("details", { className: "dshc-steps" }, [
-                    h("summary", { key: "sum" }, t("conn.steps")),
+                // 步骤不再折叠：第一次接的时候，先看到「要准备什么」，再往下填。
+                form.provider === "" ? null : h("section", { className: "dshc-steps", key: "steps" }, [
+                    h("div", { key: "title", className: "dshc-steps-title" }, t("conn.steps")),
                     h("ol", { key: "list" }, (UI[UI_LANG]["steps." + form.provider] || []).map((line, index) => h("li", { key: "s" + index }, line))),
-                    (PROVIDER_LINKS[form.provider] || []).length === 0 ? null : h("div", { key: "links", style: { marginTop: "6px", display: "flex", gap: "10px", flexWrap: "wrap" } }, (PROVIDER_LINKS[form.provider] || []).map((link) => h("a", { key: link.href, href: link.href, target: "_blank", rel: "noreferrer", className: "dshc-link" }, t(link.key)))),
-                    form.provider === "icloud" ? h("div", { className: "dshc-discover", key: "discover" }, [
-                        h(Btn, {
-                            key: "find", type: "button",
-                            disabled: busy !== "" || discoverBusy || !form.username || !form.password,
-                            onClick: discover
-                        }, discoverBusy ? t("conn.discovering") : t("conn.discover")),
-                        h("span", { key: "hint", className: "dshc-sub" }, t("conn.discoverHint")),
-                        discoverError !== null
-                            ? h("div", { key: "error", className: "dshc-alert error", role: "alert" }, discoverError)
-                            : null,
-                        discovered.length > 0
-                            ? h("span", { key: "found", className: "dshc-sub", role: "status" }, t("conn.discoverFound", { n: discovered.length }))
-                            : null
-                    ]) : null,
+                    (PROVIDER_LINKS[form.provider] || []).length === 0
+                        ? null
+                        : h("div", { key: "links", style: { marginTop: "6px", display: "flex", gap: "10px", flexWrap: "wrap" } }, (PROVIDER_LINKS[form.provider] || []).map((link) => h("a", { key: link.href, href: link.href, target: "_blank", rel: "noreferrer", className: "dshc-link" }, t(link.key))))
                 ]),
+                // 字段区：日历集合 URL 一格在「发现到多本」时原地变成多选下拉，位置不跳。
                 h("div", { className: "dshc-fields", key: "fields" }, visible.map((key) => {
+                    if (listMode && key === "caldavUrl")
+                        return h("div", { className: "dshc-field wide", key }, [
+                            h("label", { htmlFor: formId + "-cal" }, t(FIELD_LABEL.caldavUrl)),
+                            h("div", { className: "dshc-cal-select", ref: calBoxRef }, [
+                                h("button", {
+                                    key: "trigger", id: formId + "-cal", type: "button",
+                                    className: "dshc-input dshc-cal-trigger" + (selected.length === 0 ? " is-empty" : ""),
+                                    "aria-haspopup": "true", "aria-expanded": calOpen === true,
+                                    onClick: () => setCalOpen((prev) => prev !== true)
+                                }, [
+                                    h("span", { key: "text", className: "dshc-cal-trigger-text" }, selectedLabel),
+                                    h("span", { key: "caret", className: "dshc-cal-caret", "aria-hidden": "true" }, calOpen === true ? "▴" : "▾")
+                                ]),
+                                calOpen !== true ? null : h("div", { key: "pop", className: "dshc-cal-pop" }, [
+                                    h("div", { key: "head", className: "dshc-cal-pop-head" }, [
+                                        h("span", { key: "count" }, selected.length + " / " + candidates.length),
+                                        h("div", { key: "acts", className: "dshc-cal-pop-acts" }, [
+                                            h("button", { key: "all", type: "button", className: "dshc-linkbtn", onClick: () => selectAll(true) }, t("conn.calAll")),
+                                            h("button", { key: "none", type: "button", className: "dshc-linkbtn", onClick: () => selectAll(false) }, t("conn.calNone"))
+                                        ])
+                                    ]),
+                                    h("div", { key: "body", className: "dshc-cal-pop-body", role: "group", "aria-label": t("conn.calendars") }, candidates.map((item) => {
+                                        const checked = selected.some((existing) => calUrlKey(existing.url) === calUrlKey(item.url));
+                                        return h("label", { key: item.url, className: "dshc-cal-item" }, [
+                                            h("input", { type: "checkbox", checked, onChange: () => toggleCalendar(item) }),
+                                            h("span", { key: "name", className: "dshc-cal-name" }, calNameOf(item))
+                                        ]);
+                                    }))
+                                ])
+                            ]),
+                            h("div", { key: "hint", className: "dshc-sub", style: { marginTop: "3px" } }, t("conn.calendarsHint")),
+                            selected.length === 0
+                                ? h("div", { key: "empty", className: "dshc-alert warn", role: "alert" }, t("conn.calendarsEmpty"))
+                                : null,
+                            h("button", { key: "manual", type: "button", className: "dshc-linkbtn", onClick: () => setManualUrl(true) }, t("conn.manualUrl"))
+                        ]);
                     const secret = SECRET_FIELDS.indexOf(key) !== -1;
                     const stored = connection !== null && connection !== undefined && ((key === "password" && connection.hasPassword === true)
                         || (key === "clientSecret" && connection.hasClientSecret === true)
                         || (key === "refreshToken" && connection.hasRefreshToken === true));
                     const hintKey = FIELD_HINT[form.provider] ? FIELD_HINT[form.provider][key] : undefined;
-                    const asSelect = key === "caldavUrl" && discovered.length > 0 && manualUrl !== true;
-                    const options = asSelect ? discovered.map((item) => ({ value: item.url, label: item.name })) : [];
-                    if (asSelect && (form[key] || "") !== "" && !options.some((o) => o.value === form[key])) {
-                        options.unshift({ value: form[key], label: form[key] });
-                    }
                     return h("div", { className: "dshc-field" + (key === "caldavUrl" || key === "host" ? " wide" : ""), key }, [
                         h("label", { htmlFor: formId + "-" + key }, t(FIELD_LABEL[key])),
-                        asSelect ? h("select", {
-                            id: formId + "-" + key,
-                            className: "dshc-input",
-                            "aria-label": t(FIELD_LABEL[key]),
-                            value: form[key] || "",
-                            onChange: (e) => patch({ [key]: e.target.value })
-                        }, options.map((o) => h("option", { key: o.value, value: o.value, title: o.value }, o.label)))
-                        : h(Txt, {
+                        h(Txt, {
                             id: formId + "-" + key,
                             type: secret ? "password" : "text",
                             "aria-label": t(FIELD_LABEL[key]),
                             value: form[key] || "",
                             placeholder: stored ? t("conn.keep") : "",
-                            onChange: (e) => patch({ [key]: e.target.value })
+                            onChange: (e) => patch({ [key]: e.target.value }),
+                            onBlur: key === "username" || key === "password" ? autoDiscover : undefined
                         }),
                         hintKey ? h("div", { className: "dshc-sub", style: { marginTop: "3px" } }, t(hintKey)) : null,
-                        asSelect ? h("button", { key: "manual", type: "button", className: "dshc-linkbtn", onClick: () => setManualUrl(true) }, t("conn.manualUrl")) : null
+                        key === "caldavUrl" && manualUrl === true && candidates.length > 0
+                            ? h("button", { key: "list", type: "button", className: "dshc-linkbtn", onClick: () => setManualUrl(false) }, t("conn.calendars"))
+                            : null
                     ]);
                 })),
+                // 自动发现跟着账号密码走：字段一虚焦（或打开时已有账号密码）就自己跑，结果直接填进上面那格。
+                form.provider === "icloud" ? h("div", { className: "dshc-discover", key: "discover" }, [
+                    h("span", { key: "hint", className: "dshc-sub", role: "status" }, discoverBusy === true ? t("conn.discovering") : t("conn.discoverHint")),
+                    discoverError !== null
+                        ? h("div", { key: "error", className: "dshc-alert error", role: "alert" }, discoverError)
+                        : null,
+                    discovered.length > 0
+                        ? h("span", { key: "found", className: "dshc-sub", role: "status" }, t("conn.discoverFound", { n: discovered.length }))
+                        : null
+                ]) : null,
+
                 result !== null
                     ? h("div", { className: "dshc-alert " + (result.ok === true ? "ok" : "error") }, (result.ok === true ? "✓ " : t("conn.fail") + "：") + result.text)
                     : null,
                 h("div", { className: "dshc-actions" }, [
                     h(Btn, { key: "cancel", onClick: onClose, disabled: busy !== "" }, t("action.cancel")),
-                    h(Btn, { key: "test", onClick: test, disabled: busy !== "" || form.provider === "" }, busy === "test" ? t("conn.testing") : t("conn.test")),
-                    h(Btn, { key: "save", variant: "primary", onClick: save, disabled: busy !== "" || form.provider === "" || maySave !== true }, busy === "save" ? t("conn.saving") : t("conn.save"))
+                    h(Btn, { key: "test", onClick: test, disabled: busy !== "" || form.provider === "" || (listMode && selected.length === 0) }, busy === "test" ? t("conn.testing") : t("conn.test")),
+                    h(Btn, { key: "save", variant: "primary", onClick: save, disabled: busy !== "" || form.provider === "" || (listMode && selected.length === 0) || maySave !== true }, busy === "save" ? t("conn.saving") : t("conn.save"))
                 ]),
                 maySave !== true || (connection !== null && connection !== undefined && connection.settingsKind === "file")
                     ? h("div", { className: "dshc-sub", style: { marginTop: "10px" } }, connection !== null && connection !== undefined && connection.settingsKind === "file"
@@ -2122,7 +2297,7 @@ let calendarHostContext;
                         : t("conn.current", { summary: connectionSummary(connection) }))
                     : null
             ]);
-            return h(Dlg, { open: true, onClose, title: t("conn.title"), children: body });
+            return h(Dlg, { open: true, onClose, title: t("conn.title"), size: "form", children: body });
         }
         // 主面板
         // 浮层 Esc 的模块级栈：一个页面可能同时有多个 CalendarPanel。各自往 document 挂
@@ -2220,11 +2395,17 @@ let calendarHostContext;
             "source.local": "本地日历", "source.caldav": "CalDAV",
             "source.title": "日历来源", "source.current": "当前使用：{name}",
             "source.switchTo": "切换到{name}",
-            "source.switchNote": "切换时会把当前日历的日程复制过去，原有数据不会删除；已存在的和看起来重复的会跳过。",
+            "source.switchNote": "切换前会先确认：远程日程可勾选归档到本地；本地日程不会回写远程，避免重复。原有数据不会删除。",
             "source.switched": "已复制 {n} 条，现在使用{name}。",
             "source.caldavOff": "远程日历还没连接。先到侧栏日历的「日历连接」里填好账号，再回来切换。",
-            "source.busy": "正在复制日程…",
-            "conn.credentials": "这里填日历账号，不是 DSH 的模型密钥。",
+            "source.busy": "正在处理…",
+            "source.toLocalTitle": "切换到本地日历",
+            "source.toLocalHint": "勾选要归档到本地的远程日历；未勾选的日程仍留在服务器上，不会删除。本地已有的同一条日程会自动跳过。",
+            "source.toRemoteTitle": "切换到远程日历",
+            "source.toRemoteHint": "本地日程不会复制回远程，避免造出重复日程；本地文件仍保留在这台电脑上。",
+            "source.archiveCta": "归档所选并切换",
+            "source.discardCta": "不归档，直接切换",
+            "source.toRemoteCta": "确认切换",
             "import.title": "从 ICS 文件导入日程", "import.intro": "先核对预览，再导入选中的日程。已有相同 UID 的记录会跳过。",
             "import.file": "选择 ICS 文件", "import.noFile": "未选择文件", "import.paste": "或粘贴 ICS 内容", "import.timezone": "未标注时区的时间按", "import.chooseZone": "请主动选择时区", "import.preview": "预览与检查",
             "import.busy": "正在处理…", "import.close": "关闭导入", "import.select": "选择下一批（最多 20 条）", "import.clear": "清除选择", "import.commit": "确认导入 {n} 条",
@@ -2254,11 +2435,17 @@ let calendarHostContext;
             "source.local": "Local calendar", "source.caldav": "CalDAV",
             "source.title": "Calendar source", "source.current": "Currently using: {name}",
             "source.switchTo": "Switch to {name}",
-            "source.switchNote": "Switching copies the current events across; nothing is deleted. Existing and likely-duplicate events are skipped.",
+            "source.switchNote": "Confirm before switching: remote events can be archived to local; local events are not written back to avoid duplicates. Nothing is deleted.",
             "source.switched": "Copied {n} events. Now using {name}.",
             "source.caldavOff": "No remote calendar yet. Add an account under \u201cCalendar connection\u201d in the sidebar first.",
-            "source.busy": "Copying events\u2026",
-            "conn.credentials": "Use your calendar account, not your DSH model key.",
+            "source.busy": "Working\u2026",
+            "source.toLocalTitle": "Switch to local calendar",
+            "source.toLocalHint": "Tick the remote calendars to archive locally. Unticked events stay on the server and are not deleted. Existing local copies are skipped.",
+            "source.toRemoteTitle": "Switch to remote calendar",
+            "source.toRemoteHint": "Local events are not copied back to the remote calendar to avoid duplicates. The local file stays on this computer.",
+            "source.archiveCta": "Archive selected and switch",
+            "source.discardCta": "Switch without archiving",
+            "source.toRemoteCta": "Confirm switch",
             "import.title": "Import events from ICS", "import.intro": "Review the preview before importing selected events. Existing UIDs are skipped.",
             "import.file": "Choose an ICS file", "import.noFile": "No file selected", "import.paste": "Or paste ICS content", "import.timezone": "Interpret times without a timezone as", "import.chooseZone": "Choose a timezone explicitly", "import.preview": "Preview and check",
             "import.busy": "Working…", "import.close": "Close import", "import.select": "Select next batch (up to 20)", "import.clear": "Clear selection", "import.commit": "Confirm import of {n} events",
@@ -2508,6 +2695,8 @@ let calendarHostContext;
             const [busy, setBusy] = useState(false);
             const [done, setDone] = useState("");
             const [error, setError] = useState("");
+            const [confirmOpen, setConfirmOpen] = useState(false);
+            const [selected, setSelected] = useState({});
             useEffect(() => {
                 let alive = true;
                 api("connection", {}).then((value) => {
@@ -2525,18 +2714,37 @@ let calendarHostContext;
             const ready = target === "local" || remoteReady;
             const targetLabel = target === "local" ? t("source.local") : providerLabel(conn);
             const currentLabel = current === "caldav" ? providerLabel(conn) : t("source.local");
-            const switchNow = async () => {
-                setBusy(true);
+            const calendars = Array.isArray(conn && conn.calendars)
+                ? conn.calendars.filter((item) => item && typeof item.id === "string" && item.id !== "")
+                : [];
+            const selectedCount = calendars.filter((item) => selected[item.id] !== false).length;
+            const openConfirm = () => {
                 setError("");
                 setDone("");
+                // 远程 → 本地：打开弹窗时默认全选，用户可取消不要的日历。
+                if (current === "caldav") {
+                    const all = {};
+                    calendars.forEach((item) => { all[item.id] = true; });
+                    setSelected(all);
+                }
+                setConfirmOpen(true);
+            };
+            const runSwitch = async (mode) => {
+                setBusy(true);
+                setError("");
                 try {
-                    const value = await api("switchBackend", {});
+                    const body = { mode };
+                    if (mode === "archive") {
+                        body.calendarIds = calendars.filter((item) => selected[item.id] !== false).map((item) => item.id);
+                    }
+                    const value = await api("switchBackend", body);
                     if (value && value.connection) {
                         CONN_CACHE.value = value.connection;
                         CONN_CACHE.at = Date.now();
                         setConn(value.connection);
                     }
                     setDone(t("source.switched", { n: value && value.migrated ? value.migrated : 0, name: targetLabel }));
+                    setConfirmOpen(false);
                     invalidateCalendarData();
                 }
                 catch (failure) {
@@ -2546,16 +2754,47 @@ let calendarHostContext;
                     setBusy(false);
                 }
             };
+            const toggle = (id, checked) => setSelected((prev) => Object.assign({}, prev, { [id]: checked }));
+            const confirmBody = current === "caldav"
+                ? h("div", { className: "dshc-source-confirm" }, [
+                    h("p", { key: "hint", className: "dshc-sub" }, t("source.toLocalHint")),
+                    h("div", { key: "list", className: "dshc-cal-pop-body" }, calendars.map((item) =>
+                        h("label", { key: item.id, className: "dshc-cal-item" }, [
+                            h("input", { type: "checkbox", checked: selected[item.id] !== false, onChange: (e) => toggle(item.id, e.target.checked) }),
+                            h("span", { key: "name", className: "dshc-cal-name" }, calNameOf(item)),
+                        ])))
+                ])
+                : h("p", { key: "hint", className: "dshc-sub" }, t("source.toRemoteHint"));
+            const confirmFooter = current === "caldav"
+                ? h("div", { className: "dshc-actions" }, [
+                    h(Btn, { key: "cancel", variant: "ghost", onClick: () => setConfirmOpen(false), disabled: busy === true }, t("action.cancel")),
+                    h(Btn, { key: "discard", variant: "ghost", onClick: () => runSwitch("discard"), disabled: busy === true }, t("source.discardCta")),
+                    h(Btn, { key: "archive", variant: "primary", onClick: () => runSwitch("archive"), disabled: busy === true || selectedCount === 0 }, t("source.archiveCta"))
+                ])
+                : h("div", { className: "dshc-actions" }, [
+                    h(Btn, { key: "cancel", variant: "ghost", onClick: () => setConfirmOpen(false), disabled: busy === true }, t("action.cancel")),
+                    h(Btn, { key: "ok", variant: "primary", onClick: () => runSwitch("discard"), disabled: busy === true }, t("source.toRemoteCta"))
+                ]);
             return h("section", { className: "dshc-source", "aria-label": t("source.title") }, [
                 h("h3", { key: "title" }, t("source.title")),
                 h("p", { key: "current", className: "dshc-source-current" }, t("source.current", { name: currentLabel })),
                 h("p", { key: "note", className: "dshc-sub" }, t("source.switchNote")),
                 ready !== true ? h("p", { key: "off", className: "dshc-sub" }, t("source.caldavOff")) : null,
                 h("div", { key: "actions", className: "dshc-actions" }, [
-                    h(Btn, { key: "switch", variant: "primary", disabled: busy || ready !== true, onClick: switchNow }, busy ? t("source.busy") : t("source.switchTo", { name: targetLabel }))
+                    h(Btn, { key: "switch", variant: "primary", disabled: busy || ready !== true, onClick: openConfirm }, busy ? t("source.busy") : t("source.switchTo", { name: targetLabel }))
                 ]),
                 done !== "" ? h("p", { key: "done", className: "dshc-source-done", role: "status" }, done) : null,
-                error !== "" ? h("p", { key: "err", className: "dshc-alert error", role: "alert" }, error) : null
+                error !== "" ? h("p", { key: "err", className: "dshc-alert error", role: "alert" }, error) : null,
+                h(Dlg, {
+                    key: "confirm",
+                    open: confirmOpen,
+                    onClose: () => { if (busy !== true)
+                        setConfirmOpen(false); },
+                    title: current === "caldav" ? t("source.toLocalTitle") : t("source.toRemoteTitle"),
+                    size: "form",
+                    children: confirmBody,
+                    footer: confirmFooter
+                })
             ]);
         }
         /**
@@ -2690,6 +2929,8 @@ let calendarHostContext;
                 ? null
                 : (CONN_CACHE.value.backend === "local" || CONN_CACHE.value.configured !== false)));
             const [conn, setConn] = useState(() => CONN_CACHE.value);
+            /** 多日历面板：新建表单要能选写进哪一本。 */
+            const connCalendarOptions = conn !== null && conn !== undefined && Array.isArray(conn.calendars) ? conn.calendars : [];
             const [connOpen, setConnOpen] = useState(false);
             // 邮件日程：清单弹窗、角标计数、以及悬浮窗提示条递进来的「打开」请求。
             const [mailOpen, setMailOpen] = useState(false);
@@ -3008,7 +3249,9 @@ let calendarHostContext;
                 try {
                     const fields = fieldsOfDraft(form);
                     if (form.uid === undefined) {
-                        const created = await api("create", fields);
+                        const created = await api("create", typeof form.calendarId === "string" && form.calendarId !== ""
+                            ? Object.assign({}, fields, { calendarId: form.calendarId })
+                            : fields);
                         const createdUid = created !== null && created !== undefined && created.event ? created.event.uid : "";
                         // 这条草稿来自邮件识别：建成之后才把候选标成 created，失败也不撤回日程。
                         if (typeof form.mailTodoId === "string" && form.mailTodoId !== "" && typeof createdUid === "string" && createdUid !== "") {
@@ -3167,7 +3410,7 @@ let calendarHostContext;
                     })
                     : null,
                 draft !== null
-                    ? h(EventForm, { draft, events, busy, error: formError, onCancel: () => { setDraft(null); setFormError(null); }, onSubmit: submit })
+                    ? h(EventForm, { draft, events, busy, error: formError, calendars: connCalendarOptions, onCancel: () => { setDraft(null); setFormError(null); }, onSubmit: submit })
                     : null,
                 mailOpen === true
                     ? h(MailTodoDialog, {
@@ -3463,3 +3706,4 @@ calendarHostContext=ctx;W.register(ctx,{id:'dsh-calendar-pro.workbench',label:()
         exports.inject = inject;
         return module.exports;
     } });
+

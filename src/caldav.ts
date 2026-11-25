@@ -308,8 +308,8 @@ export class CalendarService {
     return events
   }
 
-  /** A complete read of the connected collection; never writes or reserves events. */
-  async availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult> {
+  /** 空闲查询所需的占用实例：完整读取并展开当前集合，任何不完整都抛错。 */
+  async busy(input: AvailabilityInput, signal?: AbortSignal): Promise<CalendarEvent[]> {
     const request = availabilityRequest(input), deadline = Date.now() + 20000, cancel = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(20000)])
     cancel.throwIfAborted()
     const start = new Date(request.startMs - 2 * 86400000).toISOString(), end = new Date(request.endMs + 2 * 86400000).toISOString()
@@ -325,10 +325,15 @@ export class CalendarService {
         events.push(...busyResource(data, object.url, start, end, request.timeZone, deadline))
         if (events.length > 10000) throw new Error('日程实例超过 10000 条，请缩小空闲查询范围')
       }
-      cancel.throwIfAborted(); const result = findAvailableTimes(events, input)
+      cancel.throwIfAborted()
       if (Date.now() > deadline) throw new Error('空闲查询超时，请缩小范围')
-      return result
+      return events
     } catch (error) { cancel.throwIfAborted(); throw translateError(error, '查询空闲时段', this.config) }
+  }
+
+  /** A complete read of the connected collection; never writes or reserves events. */
+  async availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult> {
+    return findAvailableTimes(await this.busy(input, signal), input)
   }
 
   /** 列出并展开：每个对象经 expandEventFromICal 展开为若干实例行。 */

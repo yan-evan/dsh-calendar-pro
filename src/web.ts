@@ -5,11 +5,14 @@
  * Host 为 localhost、写操作要求 application/json 且校验 Origin、响应不回显凭证。
  * 本层无状态，每次请求都问 CalDAV 服务器。
  */
-import { createBackend, createCaldavBackend, createLocalBackend } from './backend.js'
+import { createBackend, createLocalBackend, createPrimaryCaldavBackend, type CalendarBackend } from './backend.js'
 import { readJsonBody } from './http-body.js'
-import { describePlan, planMigration, runMigration } from './migrate.js'
+import { describePlan, planMigration, runMigration, shapeOf } from './migrate.js'
 import { EXPORT_LIMITS, exportFilename, mergeCalendars } from './export-ics.js'
-import { resolveBackendKind, resolveConfig, type CalendarConfig } from './config.js'
+import {
+  availableCalendars, calendarNameOf, resolveBackendKind, resolveCalendarTargets, resolveConfig,
+  type CalendarConfig, type CalendarRef,
+} from './config.js'
 import { SETTINGS_NAMESPACE, draftToConfig, validateSettingsValue, type CalendarSettingsValue } from './settings.js'
 import { CalendarService } from './caldav.js'
 import { discoverIcloudCalendars } from './discover-icloud.js'
@@ -22,6 +25,11 @@ export const SETTINGS_ROUTE = '/_dsh/dsh-calendar-pro/settings'
 
 /** 回环主机名白名单；带端口会被拆掉，IPv6 字面量保留方括号。 */
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/** 只认非空字符串，其余一律当「没填」。 */
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
 
 /** Host 头裁决：undefined = 放行，否则给出拒绝原因。 */
 export function hostVerdict(host: unknown): string | undefined {
@@ -64,12 +72,12 @@ export function postVerdict(headers: Record<string, unknown>): { status: number;
 
 /** 面板需要的服务面；测试里可以塞假的进来。 */
 export interface CalendarServiceLike {
-  availability?(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult>
+  availability?(input: AvailabilityInput, signal?: AbortSignal, calendarId?: string): Promise<AvailabilityResult>
   get?(uid: string, signal?: AbortSignal): Promise<CalendarEvent>
-  list(start: string, end: string, options?: unknown, signal?: AbortSignal): Promise<CalendarEvent[]>
-  create(fields: unknown, signal?: AbortSignal): Promise<CalendarEvent>
-  update(uid: string, changes: unknown, signal?: AbortSignal, scope?: 'series'): Promise<CalendarEvent>
-  delete(uid: string, signal?: AbortSignal, scope?: 'series'): Promise<{ uid: string; href: string }>
+  list(start: string, end: string, options?: unknown, signal?: AbortSignal, calendarId?: string): Promise<CalendarEvent[]>
+  create(fields: unknown, signal?: AbortSignal, calendarId?: string): Promise<CalendarEvent>
+  update(uid: string, changes: unknown, signal?: AbortSignal, scope?: 'series', calendarId?: string): Promise<CalendarEvent>
+  delete(uid: string, signal?: AbortSignal, scope?: 'series', calendarId?: string): Promise<{ uid: string; href: string }>
 }
 
 /** 面板用于读写 settings 命名空间的最小面（index.ts 在 settings 服务到位后接上）。 */
@@ -107,7 +115,7 @@ export function settingsFaceOf(provider: any, scope: any, ns: string = SETTINGS_
 }
 
 /** 面板要读写的连接字段。空串 = 保持不变，null = 明确清除。 */
-export const CONNECTION_KEYS = ['provider', 'caldavUrl', 'username', 'password', 'host', 'user', 'calendar', 'calendarId', 'authMethod', 'clientId', 'clientSecret', 'refreshToken', 'tokenUrl', 'proxyUrl'] as const
+export const CONNECTION_KEYS = ['provider', 'caldavUrl', 'username', 'password', 'host', 'user', 'calendar', 'calendarId', 'authMethod', 'clientId', 'clientSecret', 'refreshToken', 'tokenUrl', 'proxyUrl', 'calendarList'] as const
 
 /**
  * 会落盘的键：连接字段与数据源选择。
@@ -153,7 +161,11 @@ export interface CalendarSettingsBackendOptions {
   /** 测试用：替换真实 CalDAV 客户端（收到的是当前/拟议配置）。 */
   serviceFactory?: (config: CalendarConfig) => CalendarServiceLike
   /** 测试用：替换「保存前的连接测试」。 */
-  probeFactory?: (config: CalendarConfig) => Promise<{ count: number; sample: string[] }>
+  probeFactory?: (config: CalendarConfig) => Promise<{
+    count: number
+    sample: string[]
+    calendars?: Array<{ name: string; count: number }>
+  }>
   env?: NodeJS.ProcessEnv
   settings?: CalendarSettingsFace
   /** 宿主 ctx：用来懒接入 settings 服务（不赌子 fiber 的时序）。 */
@@ -256,13 +268,69 @@ export class CalendarSettingsBackend {
     this.cachedKey = undefined
   }
 
+  /** 集合地址归一化：比较时忽略首尾空白与结尾斜杠。 */
+  private static normalizeCalendarId(value: string): string {
+    return value.trim().replace(/\/+$/, '')
+  }
+
+  /**
+   * 把选中的远程日历逐本归档到本地：原样写入本地文件并带上来源标签。
+   * 已存在（同 UID）、疑似重复、缺 UID 的跳过；任一条失败就整批中止，不切数据源。
+   */
+  private async archiveRemoteToLocal(selectedIds: string[], signal?: AbortSignal): Promise<{
+    migrated: number
+    archived: string[]
+    skipped: { exists: number; duplicates: number; invalid: number }
+    failed: Array<{ uid: string; summary: string; message: string }>
+  }> {
+    const env = this.options.env ?? process.env
+    const source = createBackend(this.configOf(), env)
+    const target = createLocalBackend(env)
+    const slices = (source as unknown as { sliceList(): Array<{ id: string; name: string; backend: CalendarBackend }> }).sliceList()
+    const wanted = new Set(selectedIds.map(CalendarSettingsBackend.normalizeCalendarId))
+    const known = new Set(slices.map((slice) => CalendarSettingsBackend.normalizeCalendarId(slice.id)))
+    for (const id of wanted) {
+      if (!known.has(id)) throw new Error('选中的日历不在当前连接里，请刷新后重新选择。')
+    }
+    const chosen = slices.filter((slice) => wanted.has(CalendarSettingsBackend.normalizeCalendarId(slice.id)))
+
+    const targetSnap = await target.importSnapshot(signal)
+    const existingUids = new Set(targetSnap.uids)
+    const shapeIndex = new Map<string, string>()
+    for (const event of targetSnap.events) shapeIndex.set(shapeOf(event), event.uid)
+
+    const skipped = { exists: 0, duplicates: 0, invalid: 0 }
+    const failed: Array<{ uid: string; summary: string; message: string }> = []
+    let migrated = 0
+    for (const slice of chosen) {
+      const snap = await slice.backend.importSnapshot(signal)
+      for (const event of snap.events) {
+        signal?.throwIfAborted()
+        const icalUid = event.icalUid
+        if (icalUid === undefined || icalUid === '') { skipped.invalid += 1; continue }
+        if (existingUids.has(icalUid)) { skipped.exists += 1; continue }
+        if (shapeIndex.has(shapeOf(event))) { skipped.duplicates += 1; continue }
+        try {
+          const data = await slice.backend.raw(event.uid, signal)
+          await target.importRaw(icalUid, data, signal, { id: slice.id, name: slice.name })
+          existingUids.add(icalUid)
+          shapeIndex.set(shapeOf(event), event.uid)
+          migrated += 1
+        } catch (error) {
+          failed.push({ uid: event.uid, summary: event.summary, message: error instanceof Error ? error.message : String(error) })
+        }
+      }
+    }
+    return { migrated, archived: chosen.map((slice) => slice.name), skipped, failed }
+  }
+
   /** 惰性解析配置；凭据/端点变化即重建（闭包内比较，不落盘不记日志）。 */
   private service(): CalendarServiceLike {
     const current = this.configOf()
     if (this.options.serviceFactory !== undefined) return this.options.serviceFactory(current)
     const caldav = resolveBackendKind(current) === 'caldav'
-    // 本地后端无状态，按 kind 复用；caldav 按完整解析结果比较，凭据变了不复用旧 token。
-    const key = caldav ? 'caldav|' + JSON.stringify(resolveConfig(current, this.options.env ?? process.env)) : 'local'
+    // 本地后端无状态，按 kind 复用；caldav 按「凭据 + 日历清单」比较，任一项变了都重建。
+    const key = caldav ? 'caldav|' + JSON.stringify(resolveCalendarTargets(current, this.options.env ?? process.env)) : 'local'
     if (this.cachedService === undefined || this.cachedKey !== key) {
       this.cachedService = createBackend(current, this.options.env ?? process.env) as unknown as CalendarServiceLike
       this.cachedKey = key
@@ -318,7 +386,14 @@ export class CalendarSettingsBackend {
       hasPassword: hasCredential('password', 'DSH_CALENDAR_PASSWORD'),
       hasClientSecret: hasCredential('clientSecret', 'DSH_CALENDAR_CLIENT_SECRET'),
       hasRefreshToken: hasCredential('refreshToken', 'DSH_CALENDAR_REFRESH_TOKEN'),
+      /** 已连接的日历（同一账户下的多本）；单本配置也返回一项，面板用它渲染勾选。 */
+      calendars: this.calendarBriefs(effective),
     }
+  }
+
+  /** 已连接日历摘要：解析失败一律空数组，由 configured/reason 说明原因。 */
+  private calendarBriefs(config: CalendarConfig): Array<{ id: string; name: string }> {
+    return availableCalendars(config).map((ref: CalendarRef) => ({ id: ref.url, name: ref.name ?? calendarNameOf(ref.url) }))
   }
 
   /** 兼容旧动作名：status 就是连接摘要。 */
@@ -336,15 +411,34 @@ export class CalendarSettingsBackend {
     return { stored, config: { ...this.configOf(), ...draftToConfig(stored as Partial<CalendarSettingsValue>) } }
   }
 
-  /** 真连一次：拿拟议配置列一下未来 30 天，能列出来就算通。 */
-  private async probe(config: CalendarConfig): Promise<{ count: number; sample: string[] }> {
+  /**
+   * 真连一次：把每本日历都列一下未来 30 天，全部能列出来才算通。
+   * 返回值带上逐本计数，面板才能说清「3 本日历、共 N 条」，而不是只报一个总数。
+   */
+  private async probe(config: CalendarConfig): Promise<{
+    count: number
+    sample: string[]
+    calendars?: Array<{ name: string; count: number }>
+  }> {
     if (this.options.probeFactory !== undefined) return await this.options.probeFactory(config)
-    const service = this.options.serviceFactory !== undefined
-      ? this.options.serviceFactory(config)
-      : (new CalendarService(resolveConfig(config, this.options.env ?? process.env)) as unknown as CalendarServiceLike)
+    const env = this.options.env ?? process.env
+    const targets = resolveCalendarTargets(config, env)
     const now = new Date()
-    const events = await service.list(isoNoMillis(now.toISOString()), isoNoMillis(new Date(now.getTime() + 30 * 86400000).toISOString()), { expand: false, maxOccurrences: 5 })
-    return { count: events.length, sample: events.slice(0, 3).map((event) => event.summary) }
+    const start = isoNoMillis(now.toISOString())
+    const end = isoNoMillis(new Date(now.getTime() + 30 * 86400000).toISOString())
+    const results = await Promise.all(targets.map(async (target) => {
+      const service = this.options.serviceFactory !== undefined
+        ? this.options.serviceFactory(target.config)
+        : (new CalendarService(target.config) as unknown as CalendarServiceLike)
+      const events = await service.list(start, end, { expand: false, maxOccurrences: 5 })
+      return { name: target.ref.name ?? calendarNameOf(target.ref.url), events }
+    }))
+    const events = results.flatMap((item) => item.events)
+    return {
+      count: events.length,
+      sample: events.slice(0, 3).map((event) => event.summary),
+      calendars: results.map((item) => ({ name: item.name, count: item.events.length })),
+    }
   }
 
   private responseJson(res: any, status: number, payload: unknown): void {
@@ -429,19 +523,46 @@ export class CalendarSettingsBackend {
       if (face === undefined) {
         throw new Error('当前宿主的 settings 服务不可用：请在 profile 的 cordis.patch.yml 里配置 dsh-calendar-pro 后重启')
       }
+      // 首次连远程：本地已有日程时先搬到远程第一本；再次保存（已是 caldav）不重复推，避免造出重复日程。
+      const env = this.options.env ?? process.env
+      const before = face.read?.() ?? {}
+      const previousBackend = typeof before.backend === 'string' ? before.backend : undefined
+      let pushed = 0
+      if (previousBackend !== 'caldav' && body.pushLocal !== false) {
+        const local = createLocalBackend(env)
+        const localSnap = await local.importSnapshot(signal)
+        if (localSnap.events.length > 0) {
+          const remote = createPrimaryCaldavBackend(config, env)
+          const plan = await planMigration(local, remote, signal)
+          if (plan.create.length > 0) {
+            const pushedResult = await runMigration(local, remote, plan, { limit: 500 }, signal)
+            if (pushedResult.failed.length > 0) {
+              throw new Error('连接已中止：' + pushedResult.failed.length + ' 条本地日程复制到远程失败，未保存连接。请检查连接后重试。')
+            }
+            pushed = pushedResult.migrated
+          }
+        }
+      }
       // 保存并启用一律切到 caldav：本地文件仍在原处，可随时切回或迁移。
       const committed = { ...stored, backend: 'caldav' as const }
       await face.replace(committed, face.descriptor()?.revision ?? 0)
       try { this.options.onSettings?.(committed) } catch (error) { /* 同上 */ }
       this.cachedService = undefined
       this.cachedKey = undefined
-      return { saved: true, ...(probe !== undefined ? { probe } : {}), connection: this.connection() }
+      return { saved: true, ...(probe !== undefined ? { probe } : {}), ...(pushed > 0 ? { pushed } : {}), connection: this.connection() }
     }
     // iCloud 发现：只读协议查询，凭据仅用于本次 Basic 认证，绝不写进配置。
     if (action === 'discoverIcloud') {
-      const username = optionalString(body, 'username') ?? ''
-      const password = optionalString(body, 'password') ?? ''
       const proxyUrl = optionalString(body, 'proxyUrl')
+      // 表单里的密码留空 = 沿用已保存的那一份：自动发现不该逼用户再打一次密码。
+      const stored = this.configOf()
+      const username = (optionalString(body, 'username') ?? '').trim() !== ''
+        ? optionalString(body, 'username')!.trim()
+        : (nonEmptyString(stored.username) ?? '')
+      const typed = optionalString(body, 'password') ?? ''
+      const password = typed !== '' ? typed : (nonEmptyString(stored.password) ?? '')
+      if (username === '') throw new Error('先填账号：自动发现需要 iCloud 邮箱')
+      if (password === '') throw new Error('先填 App 专用密码：自动发现需要密码')
       const calendars = await discoverIcloudCalendars({
         username,
         password,
@@ -455,24 +576,33 @@ export class CalendarSettingsBackend {
       await this.commitBackend(value)
       return { backend: value, connection: this.connection() }
     }
-    // 一键切换数据源：把当前源复制到另一边，成功后切换；失败一条都不切，避免两端不一致。
+    // 切换数据源：
+    // 本地 → 远程：不回写本地日程（避免与远程已有日程重复），只切源；
+    // 远程 → 本地：按勾选的日历归档到本地（带来源标签），或直接丢弃远程数据只切源。
     if (action === 'switchBackend') {
       const current = resolveBackendKind(this.configOf()) ?? 'local'
-      const target = current === 'local' ? 'caldav' : 'local'
       const env = this.options.env ?? process.env
-      const fromBackend = current === 'local' ? createLocalBackend() : createCaldavBackend(this.configOf(), env)
-      const toBackend = target === 'local' ? createLocalBackend() : createCaldavBackend(this.configOf(), env)
-      const plan = await planMigration(fromBackend, toBackend, signal)
-      const result = plan.create.length > 0
-        ? await runMigration(fromBackend, toBackend, plan, { limit: 500 }, signal)
-        : { migrated: 0, failed: [] as Array<{ uid: string; summary: string; message: string }> }
-      const skipped = { exists: plan.exists, duplicates: plan.duplicates.length, invalid: plan.invalid }
-      if (result.failed.length > 0) {
-        throw new Error('切换已中止：' + result.failed.length + ' 条复制失败，当前仍使用' +
-          (current === 'local' ? '本地日历' : '远程日历') + '。请检查连接后重试。')
+      if (current === 'local') {
+        // 防止重复：本地已有的日程不再推回远程；本地文件仍保留在这台电脑上。
+        await this.commitBackend('caldav')
+        return { backend: 'caldav', migrated: 0, skipped: { exists: 0, duplicates: 0, invalid: 0 }, archived: [], connection: this.connection() }
       }
-      await this.commitBackend(target)
-      return { backend: target, migrated: result.migrated, skipped, connection: this.connection() }
+      const mode = optionalString(body, 'mode') ?? 'discard'
+      if (mode === 'discard') {
+        await this.commitBackend('local')
+        return { backend: 'local', migrated: 0, skipped: { exists: 0, duplicates: 0, invalid: 0 }, archived: [], connection: this.connection() }
+      }
+      if (mode !== 'archive') throw new Error('mode 只支持 archive / discard，收到 ' + mode)
+      const calendarIds = Array.isArray(body.calendarIds)
+        ? body.calendarIds.filter((item): item is string => typeof item === 'string')
+        : []
+      if (calendarIds.length === 0) throw new Error('归档到本地需要至少勾选一本日历；不归档请选择「直接切换」。')
+      const report = await this.archiveRemoteToLocal(calendarIds, signal)
+      if (report.failed.length > 0) {
+        throw new Error('切换已中止：' + report.failed.length + ' 条复制失败，当前仍使用远程日历。请检查连接后重试。')
+      }
+      await this.commitBackend('local')
+      return { backend: 'local', migrated: report.migrated, skipped: report.skipped, archived: report.archived, connection: this.connection() }
     }
     // 导出当前日历为 .ics：文本级合并，保留未建模字段（ATTENDEE / EXDATE / X-）。
     if (action === 'exportIcs') {
@@ -495,8 +625,8 @@ export class CalendarSettingsBackend {
       if (target !== 'local' && target !== 'caldav') throw new Error('迁移目标只支持 local / caldav，收到 ' + target)
       if (target === current) throw new Error('源与目标是同一个数据源，无需迁移。')
       const env = this.options.env ?? process.env
-      const fromBackend = current === 'local' ? createLocalBackend() : createCaldavBackend(this.configOf(), env)
-      const toBackend = target === 'local' ? createLocalBackend() : createCaldavBackend(this.configOf(), env)
+      const fromBackend = current === 'local' ? createLocalBackend(env) : createBackend(this.configOf(), env)
+      const toBackend = target === 'local' ? createLocalBackend(env) : createPrimaryCaldavBackend(this.configOf(), env)
       const plan = await planMigration(fromBackend, toBackend, signal)
       if (action === 'migratePlan') return { plan, summary: describePlan(plan) }
       const result = await runMigration(fromBackend, toBackend, plan, { limit: clampInt(body.limit, 200, 1, 500) }, signal)
@@ -515,20 +645,22 @@ export class CalendarSettingsBackend {
       assertIsoTime(start, 'start')
       assertIsoTime(end, 'end')
       assertTimeRange(start, end)
+      const calendarId = optionalString(body, 'calendarId')
       const events = sortEvents(await this.service().list(start, end, {
         expand: body.expand !== false,
         maxOccurrences: clampInt(body.maxOccurrences, 200, 1, 500),
-      }))
-      return { count: events.length, start, end, events }
+      }, undefined, calendarId))
+      const briefs = this.calendarBriefs(this.configOf())
+      return { count: events.length, start, end, events, ...(briefs.length > 1 ? { calendars: briefs } : {}) }
     }
     if (action === 'availability') {
       const service = this.service()
       if (!service.availability) throw new Error('当前日历连接不支持完整的空闲查询，请更新插件')
-      return service.availability(body as unknown as AvailabilityInput, signal)
+      return service.availability(body as unknown as AvailabilityInput, signal, optionalString(body, 'calendarId'))
     }
     if (action === 'create') {
       const fields = eventFields(body, true)
-      return { event: await this.service().create(fields) }
+      return { event: await this.service().create(fields, undefined, optionalString(body, 'calendarId')) }
     }
     if (action === 'event') {
       const service = this.service()
@@ -537,11 +669,14 @@ export class CalendarSettingsBackend {
     }
     if (action === 'update') {
       const uid = requireString(body, 'uid', '缺少要修改的事件 uid')
-      return { event: await this.service().update(uid, eventFields(body, false), undefined, body.scope === 'series' ? 'series' : undefined) }
+      return {
+        event: await this.service().update(uid, eventFields(body, false), undefined,
+          body.scope === 'series' ? 'series' : undefined, optionalString(body, 'calendarId')),
+      }
     }
     if (action === 'delete') {
       const uid = requireString(body, 'uid', '缺少要删除的事件 uid')
-      return await this.service().delete(uid, undefined, body.scope === 'series' ? 'series' : undefined)
+      return await this.service().delete(uid, undefined, body.scope === 'series' ? 'series' : undefined, optionalString(body, 'calendarId'))
     }
     throw new Error('未知动作：' + (action === '' ? '(空)' : action))
   }
@@ -553,6 +688,11 @@ function connectionDraft(body: Record<string, unknown>): Record<string, unknown>
   for (const key of CONNECTION_KEYS) {
     if (!(key in body)) continue
     const value = body[key]
+    // calendarList 允许直接传数组（面板与脚本这样更自然），落盘统一成 JSON 字符串。
+    if (key === 'calendarList' && Array.isArray(value)) {
+      draft[key] = JSON.stringify(value)
+      continue
+    }
     if (value === null || typeof value === 'string') draft[key] = value
   }
   return draft

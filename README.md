@@ -38,6 +38,7 @@ dsh-calendar-pro 是 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai)
 **跨设备日程管理：**
 
 - **支持 CalDAV**：iCloud、Google、Nextcloud，以及任何兼容 CalDAV 的服务，接上即同步
+- **一个账号多本日历**：工作、家庭、生日几本可以合并成一份看，读、查、约时间都不用来回切；写入时可以指定落在哪一本
 - **融合原生提醒**：同步到 iPhone、iPad 与 Mac 后由系统日历照常提醒，不必额外装 App
 - **双向同步**：手机上记的一件事，电脑上能看到；电脑上改过的时间，手机上同样是最新的
 - **一份日程，多端一致**：出差用手机看，坐下用电脑改，看到的永远是同一份

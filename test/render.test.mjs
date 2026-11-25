@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 const SOURCE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const EXPOSE = 'module.exports.__internals = { __components: { WeekView, MonthView, AgendaView, CalendarPanel, Launcher, ConnectionForm, AvailabilityPanel, CycleSettings, IcsImportPanel, SourceSettings, CalendarLoader }, __data: { useCalendarData, DATA_CACHE }, __layer: { registerLayerEscape } };';
+const EXPOSE = 'module.exports.__internals = { __components: { WeekView, MonthView, AgendaView, CalendarPanel, Launcher, ConnectionForm, EventForm, AvailabilityPanel, CycleSettings, IcsImportPanel, SourceSettings, CalendarLoader }, __data: { useCalendarData, DATA_CACHE }, __layer: { registerLayerEscape } };';
 if (!SOURCE.includes('return module.exports;')) throw new Error('client.js 装载契约变了，本测试的注入点要跟着改');
 const PATCHED = SOURCE.replace('return module.exports;', EXPOSE + '\nreturn module.exports;');
 
@@ -29,6 +29,9 @@ async function setup(options = {}) {
     }
     if (options.notConfigured === true && apiCalls.at(-1).body?.action === 'connection') {
       return { ok: true, status: 200, json: async () => ({ ok: true, value: { configured: false } }) };
+    }
+    if (apiCalls.at(-1).body?.action === 'discoverIcloud') {
+      return { ok: true, status: 200, json: async () => ({ ok: true, value: { calendars: options.discover ?? [] } }) };
     }
     if (options.connectionError !== undefined && apiCalls.at(-1).body?.action === 'testConnection') {
       return { ok: true, status: 200, json: async () => ({ ok: false, error: { message: options.connectionError } }) };
@@ -121,6 +124,14 @@ async function render(react, reactDomClient, element) {
   return { container, root };
 }
 
+/** React 受控组件要走原生 setter 才算「用户输入」，直接改 value 不会触发 onChange。 */
+function setControlValue(win, node, value, eventName) {
+  const proto = Object.getPrototypeOf(node);
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+  if (setter) setter.call(node, value); else node.value = value;
+  node.dispatchEvent(new win.Event(eventName, { bubbles: true }));
+}
+
 test('从 Google 切到 iCloud 时测试与保存都改用 Basic，不继承 OAuth', async () => {
   const { react, reactDomClient, components, win, apiCalls } = await setup();
   const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
@@ -153,6 +164,227 @@ test('连接草稿改动后旧的测试结论立即失效', async () => {
     await react.act(async () => { select.value = 'google'; select.dispatchEvent(new win.Event('change', { bubbles: true })); });
     assert.doesNotMatch(win.document.body.textContent, /旧账号连接失败/, '新草稿不能继续显示旧账号的失败结论');
   } finally { await react.act(async () => root.unmount()); }
+});
+
+test('多日历勾选是下拉：默认收起且全选，取消后只保存勾中的，全部取消则不能保存', async () => {
+  const { react, reactDomClient, components, win, apiCalls } = await setup();
+  const HOME = 'https://cal.example/me/calendars/home/';
+  const WORK = 'https://cal.example/me/calendars/work/';
+  const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+    connection: {
+      provider: 'custom', caldavUrl: HOME, settingsAvailable: true, hasPassword: true,
+      calendars: [{ id: HOME, name: '家庭' }, { id: WORK, name: '工作' }],
+    },
+    onClose() {}, onSaved() {},
+  }));
+  try {
+    const trigger = () => win.document.querySelector('.dshc-cal-trigger');
+    const boxes = () => [...win.document.querySelectorAll('.dshc-cal-item input[type=checkbox]')];
+    const saveButton = () => [...win.document.querySelectorAll('button')].find((node) => node.textContent === '保存并启用');
+
+    // 收起的下拉：表单里只有一行触发器，不再有一条撑高的勾选框列表。
+    assert.equal(win.document.querySelector('.dshc-cal-pop'), null, '默认收起，勾选清单不占表单高度');
+    assert.match(trigger().textContent, /家庭、工作/, '触发器上直接看出选了哪几本');
+    assert.match(trigger().textContent, /2 本日历/, '触发器带总数');
+
+    await react.act(async () => { trigger().click(); });
+    assert.notEqual(win.document.querySelector('.dshc-cal-pop'), null, '点一下才展开清单');
+    assert.deepEqual(boxes().map((box) => box.checked), [true, true], '展开后默认全选');
+    assert.match(win.document.querySelector('.dshc-cal-item').textContent, /家庭/);
+    assert.equal(/cal\.example/.test(win.document.querySelector('.dshc-cal-pop').textContent), false, '清单只显示日历名，不铺地址');
+    assert.equal(win.document.querySelector('.dshc-cal-url'), null, '地址那一行已经去掉');
+    // 位置不跳：列表就在「日历」这一格里，不是另起一块塞在表单底部
+    const slot = win.document.querySelector(`[id$="-cal"]`).closest('.dshc-field');
+    assert.ok(trigger().classList.contains('dshc-input'), '下拉外壳就是普通输入框那一套，尺寸字体不变');
+    assert.match(slot.querySelector('label').textContent, /日历集合 URL/, '标题保持「日历集合 URL」，不改成别的');
+    assert.ok(win.document.querySelector('.dshc-fields').contains(slot), '选择器在字段格里');
+    assert.equal(win.document.querySelectorAll('.dshc-field.wide .dshc-cal-select').length, 1, '整张表单只有一个日历选择处');
+
+    // 取消「工作」后保存：只写家庭。
+    await react.act(async () => { boxes()[1].click(); });
+    await react.act(async () => { saveButton().click(); });
+    const saved = apiCalls.at(-1);
+    assert.equal(saved.body.action, 'saveConnection');
+    assert.deepEqual(JSON.parse(saved.body.calendarList).map((item) => item.url), [HOME], '只写勾中的那一本');
+    assert.equal(saved.body.caldavUrl, HOME, 'caldavUrl 跟着第一本走');
+
+    // 清空：一本不剩，保存被禁用，触发器回到提示文案。
+    await react.act(async () => {
+      [...win.document.querySelectorAll('.dshc-cal-pop-acts button')].find((node) => node.textContent === '清空').click();
+    });
+    assert.deepEqual(boxes().map((box) => box.checked), [false, false], '清空把勾都去掉');
+    assert.equal(saveButton().disabled, true, '一本都没勾就不能保存');
+    assert.match(win.document.body.textContent, /至少勾选一本日历/);
+
+    // 全选把刚才清掉的勾回来。
+    await react.act(async () => {
+      [...win.document.querySelectorAll('.dshc-cal-pop-acts button')].find((node) => node.textContent === '全选').click();
+    });
+    assert.deepEqual(boxes().map((box) => box.checked), [true, true], '全选一键勾满');
+    assert.equal(saveButton().disabled, false, '有勾就能保存');
+  } finally { await react.act(async () => root.unmount()); }
+});
+
+test('新建日程能选写进哪一本日历（只有一本时不出现这个字段）', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  const HOME = 'https://cal.example/me/calendars/home/';
+  const WORK = 'https://cal.example/me/calendars/work/';
+  const draft = {
+    uid: undefined, summary: '', date: '2026-11-21', startTime: '10:00', endTime: '11:00',
+    allDay: false, location: '', description: '', repeat: '', rrule: '',
+  };
+  let submitted = null;
+  const { root } = await render(react, reactDomClient, react.createElement(components.EventForm, {
+    draft, events: [], busy: false, error: null,
+    calendars: [{ id: HOME, name: '家庭' }, { id: WORK, name: '工作' }],
+    onCancel() {}, onSubmit(form) { submitted = form; },
+  }));
+  try {
+    const picker = () => win.document.querySelector('[id$="-calendar"]');
+    assert.ok(picker(), '多本日历时要能选写进哪一本');
+    assert.deepEqual([...picker().options].map(o => o.textContent), ['家庭', '工作'], '两本都要能选');
+    assert.equal(picker().value, HOME, '默认第一本');
+
+    const summary = win.document.querySelector('[id$="-summary"]');
+    await react.act(async () => { setControlValue(win, summary, '周会', 'input'); });
+    await react.act(async () => { setControlValue(win, picker(), WORK, 'change'); });
+    const save = [...win.document.querySelectorAll('button')].find(node => node.textContent === '保存');
+    await react.act(async () => { save.click(); });
+    assert.equal(submitted && submitted.calendarId, WORK, '选中的日历要跟着提交');
+    assert.equal(submitted.summary, '周会');
+  } finally { await react.act(async () => root.unmount()); }
+});
+
+test('只有一本日历时，新建表单不出现日历字段', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  let submitted = null;
+  const { root } = await render(react, reactDomClient, react.createElement(components.EventForm, {
+    draft: { uid: undefined, summary: '', date: '2026-11-21', startTime: '10:00', endTime: '11:00', allDay: false, location: '', description: '', repeat: '', rrule: '' },
+    events: [], busy: false, error: null,
+    calendars: [{ id: 'https://cal.example/me/calendars/home/', name: '家庭' }],
+    onCancel() {}, onSubmit(form) { submitted = form; },
+  }));
+  try {
+    assert.equal(win.document.querySelector('[id$="-calendar"]'), null, '单本日历不该多这一行');
+    const summary = win.document.querySelector('[id$="-summary"]');
+    await react.act(async () => { setControlValue(win, summary, '独本', 'input'); });
+    const save = [...win.document.querySelectorAll('button')].find(node => node.textContent === '保存');
+    await react.act(async () => { save.click(); });
+    assert.equal(submitted && submitted.calendarId, undefined, '不传 calendarId，交给后端默认第一本');
+  } finally { await react.act(async () => root.unmount()); }
+});
+
+test('连接表单：没有多余提示，步骤常驻且排在账号密码之前，发现在其后', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  const HOME = 'https://cal.example/me/calendars/home/';
+  const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+    connection: {
+      provider: 'icloud', username: 'me@icloud.com', caldavUrl: HOME, settingsAvailable: true, hasPassword: true,
+      calendars: [{ id: HOME, name: '家庭' }],
+    },
+    onClose() {}, onSaved() {},
+  }));
+  try {
+    const text = win.document.body.textContent;
+    assert.equal(/先测试连接/.test(text), false, '「先测试连接，通过后再保存」这句提示该删掉');
+    assert.equal(/不是 DSH 的模型密钥/.test(text), false, '「这里填日历账号，不是 DSH 的模型密钥」这句该删掉');
+
+    const steps = win.document.querySelector('.dshc-steps');
+    const username = win.document.querySelector('[id$="-username"]');
+    const discover = win.document.querySelector('.dshc-discover');
+    const trigger = win.document.querySelector('.dshc-cal-trigger');
+    assert.ok(steps && username && discover, '步骤、账号密码、自动发现都要在');
+    assert.equal(win.document.querySelector('.dshc-steps summary'), null, '步骤不再是折叠区');
+    // 顺序：步骤 → 账号密码 → 自动发现
+    assert.ok(steps.compareDocumentPosition(username) & win.Node.DOCUMENT_POSITION_FOLLOWING, '步骤要排在账号密码之前');
+    assert.ok(username.compareDocumentPosition(discover) & win.Node.DOCUMENT_POSITION_FOLLOWING, '自动发现要排在账号密码之后');
+    const fields = win.document.querySelector('.dshc-fields');
+    assert.ok(fields && fields.contains(trigger), '日历选择留在这一个字段格里，不另起一块列表');
+    assert.equal(win.document.querySelector('[id$="-caldavUrl"]'), null, '多本时这格就是下拉，不再同时摆一个输入框');
+  } finally { await react.act(async () => root.unmount()); }
+});
+
+test('新建连接默认 iCloud，已有连接保留自己的服务商', async () => {
+  const { react, reactDomClient, components, win } = await setup();
+  {
+    const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+      connection: null, onClose() {}, onSaved() {},
+    }));
+    try {
+      const provider = win.document.querySelector('[id$="-provider"]');
+      assert.equal(provider.value, 'icloud', '一打开就是 iCloud，不用先选服务商');
+      assert.ok(win.document.querySelector('.dshc-steps'), '默认 iCloud，步骤说明直接就在');
+      assert.equal([...provider.options].some((option) => option.textContent.includes('自建')), true, '想换自建/Nextcloud 仍然能选');
+    } finally { await react.act(async () => root.unmount()); }
+  }
+  {
+    const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+      connection: { provider: 'custom', caldavUrl: 'https://cal.example/me/calendars/home/', settingsAvailable: true, hasPassword: true },
+      onClose() {}, onSaved() {},
+    }));
+    try {
+      const provider = win.document.querySelector('[id$="-provider"]');
+      assert.equal(provider.value, 'custom', '已连的自建地址不能被默认值顶掉');
+    } finally { await react.act(async () => root.unmount()); }
+  }
+});
+
+test('iCloud 自动发现：没有按钮，账号密码一虚焦就跑，已存的密码不用重填', async () => {
+  const HOME = 'https://cal.example/me/calendars/home/';
+  const WORK = 'https://cal.example/me/calendars/work/';
+  const twoCalendars = [{ url: HOME, name: '家庭' }, { url: WORK, name: '工作' }];
+
+  // 一、账号已在位、密码存在：打开表单就该自己查一遍，不必虚焦。
+  {
+    const { react, reactDomClient, components, win, apiCalls } = await setup({ discover: twoCalendars });
+    const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+      connection: { provider: 'icloud', username: 'me@icloud.com', settingsAvailable: true, hasPassword: true, calendars: [] },
+      onClose() {}, onSaved() {},
+    }));
+    try {
+      await react.act(async () => {});
+      const finds = apiCalls.filter((call) => call.body.action === 'discoverIcloud');
+      assert.equal(finds.length, 1, '打开就该自动发现一次');
+      assert.equal(finds[0].body.username, 'me@icloud.com');
+      assert.equal(finds[0].body.password, '', '密码留给后端沿用已保存的那份');
+
+      const buttons = [...win.document.querySelectorAll('.dshc-discover button')];
+      assert.deepEqual(buttons.map((node) => node.textContent), [], '发现区块里不该再有按钮');
+      assert.equal(/自动发现日历|Find my calendars/.test(win.document.body.textContent), false, '也不该留按钮文案');
+      assert.match(win.document.querySelector('.dshc-discover').textContent, /会自动列出你的日历/, '提示改成自动列出');
+
+      assert.match(win.document.querySelector('.dshc-cal-trigger').textContent, /2 本日历/, '发现到的两本默认都选上');
+    } finally { await react.act(async () => root.unmount()); }
+  }
+
+  // 二、全新账号：账号虚焦时还缺密码，不查；密码虚焦才查，且同一组值不重复查。
+  {
+    const { react, reactDomClient, components, win, apiCalls } = await setup({ discover: twoCalendars });
+    const { root } = await render(react, reactDomClient, react.createElement(components.ConnectionForm, {
+      connection: { provider: 'icloud', settingsAvailable: true, hasPassword: false, calendars: [] },
+      onClose() {}, onSaved() {},
+    }));
+    const blur = async (node) => { await react.act(async () => { node.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true })); }); };
+    const finds = () => apiCalls.filter((call) => call.body.action === 'discoverIcloud');
+    try {
+      const username = win.document.querySelector('[id$="-username"]');
+      const password = win.document.querySelector('[id$="-password"]');
+      await react.act(async () => { setControlValue(win, username, 'me@icloud.com', 'input'); });
+      await blur(username);
+      assert.equal(finds().length, 0, '只有账号没有密码，先别发请求');
+
+      await react.act(async () => { setControlValue(win, password, 'app-pass', 'input'); });
+      await blur(password);
+      await react.act(async () => {});
+      assert.equal(finds().length, 1, '密码填完虚焦即自动发现');
+      assert.equal(finds()[0].body.username, 'me@icloud.com');
+      assert.equal(finds()[0].body.password, 'app-pass');
+
+      await blur(password);
+      await react.act(async () => {});
+      assert.equal(finds().length, 1, '同一组账号密码不再重复请求');
+    } finally { await react.act(async () => root.unmount()); }
+  }
 });
 
 test('周视图能渲染出来（曾经因为 useEffect 依赖数组 TDZ 而每次渲染即崩）', async () => {
@@ -746,7 +978,7 @@ test('首启：没选过数据源时只显示两选一，不渲染日历网格�
   } finally { await react.act(async () => root.unmount()); }
 });
 
-test('设置页来源段：一个按钮直接切换，文案写明切到哪；远程未连接时禁用', async () => {
+test('设置页来源段：切换前先弹确认框；远程未连接时禁用', async () => {
   const flush = async (react) => { await react.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); }); };
 
   // 场景一：当前本地、远程未连接 —— 按钮写明目标，但禁用并给出指引。
@@ -763,7 +995,7 @@ test('设置页来源段：一个按钮直接切换，文案写明切到哪；�
     assert.equal(/检查要迁移的内容|开始迁移/.test(first.container.textContent), false, '不该再有两步式预检');
   } finally { await local.react.act(async () => first.root.unmount()); }
 
-  // 场景二：远程已连接 —— 一键切换，只发一个请求（服务端内部做预检 + 复制 + 切源）。
+  // 场景二：本地 → 远程：先弹确认框，说明本地日程不回写；确认后只发一个 switchBackend（discard）。
   const remote = await setup({ connection: { backend: 'local', configured: true, provider: 'icloud', settingsAvailable: true, revision: 3 } });
   const second = await render(remote.react, remote.reactDomClient, remote.react.createElement(remote.components.SourceSettings, {}));
   try {
@@ -773,10 +1005,49 @@ test('设置页来源段：一个按钮直接切换，文案写明切到哪；�
     assert.equal(button.disabled, false);
     await remote.react.act(async () => { button.dispatchEvent(new remote.win.MouseEvent('click', { bubbles: true })); });
     await flush(remote.react);
+    assert.match(second.container.textContent, /本地日程不会复制回远程/);
+    const confirm = [...second.container.querySelectorAll('button')].find(node => /确认切换/.test(node.textContent));
+    assert.ok(confirm, '确认框里要有确认切换按钮');
+    await remote.react.act(async () => { confirm.dispatchEvent(new remote.win.MouseEvent('click', { bubbles: true })); });
+    await flush(remote.react);
     const call = remote.apiCalls.find(item => item.body && item.body.action === 'switchBackend');
     assert.ok(call, '要调用 switchBackend');
+    assert.equal(call.body.mode, 'discard');
     assert.equal(remote.apiCalls.some(item => item.body && item.body.action === 'migratePlan'), false, '前端不再先发预检');
   } finally { await remote.react.act(async () => second.root.unmount()); }
+
+  // 场景三：远程 → 本地：确认框列出多本日历、默认全选；取消一本后归档，请求只带勾选的日历。
+  const multi = await setup({
+    connection: {
+      backend: 'caldav', configured: true, provider: 'icloud', settingsAvailable: true, revision: 4,
+      calendars: [
+        { id: 'https://cal.example/me/calendars/home/', name: '家庭' },
+        { id: 'https://cal.example/me/calendars/work/', name: '工作' },
+      ],
+    },
+  });
+  const third = await render(multi.react, multi.reactDomClient, multi.react.createElement(multi.components.SourceSettings, {}));
+  try {
+    await flush(multi.react);
+    const button = [...third.container.querySelectorAll('button')].find(node => /切换到/.test(node.textContent));
+    assert.equal(button.textContent, '切换到本地日历');
+    await multi.react.act(async () => { button.dispatchEvent(new multi.win.MouseEvent('click', { bubbles: true })); });
+    await flush(multi.react);
+    const checks = [...third.container.querySelectorAll('.dshc-cal-item input')];
+    assert.equal(checks.length, 2, '要列出两本日历');
+    assert.equal(checks[0].checked, true, '默认全选');
+    assert.equal(checks[1].checked, true, '默认全选');
+    await multi.react.act(async () => { checks[1].dispatchEvent(new multi.win.MouseEvent('click', { bubbles: true })); });
+    await flush(multi.react);
+    const archive = [...third.container.querySelectorAll('button')].find(node => /归档所选并切换/.test(node.textContent));
+    assert.ok(archive, '要有归档所选并切换按钮');
+    await multi.react.act(async () => { archive.dispatchEvent(new multi.win.MouseEvent('click', { bubbles: true })); });
+    await flush(multi.react);
+    const call = multi.apiCalls.find(item => item.body && item.body.action === 'switchBackend');
+    assert.ok(call, '要调用 switchBackend');
+    assert.equal(call.body.mode, 'archive');
+    assert.deepEqual(call.body.calendarIds, ['https://cal.example/me/calendars/home/']);
+  } finally { await multi.react.act(async () => third.root.unmount()); }
 });
 
 test('ICS 面板同时是导出入口：按钮触发 exportIcs 并给出条数', async () => {

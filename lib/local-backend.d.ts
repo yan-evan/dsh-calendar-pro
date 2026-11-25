@@ -23,6 +23,8 @@ export declare class LocalBackend {
         start: string;
         end: string;
     }): Promise<CalendarEvent[]>;
+    /** 空闲查询所需的占用实例；与 CalDAV 一侧同一条路径：超限就明确失败。 */
+    busy(input: AvailabilityInput, signal?: AbortSignal): Promise<CalendarEvent[]>;
     availability(input: AvailabilityInput, signal?: AbortSignal): Promise<AvailabilityResult>;
     create(fields: EventFields, signal?: AbortSignal): Promise<CalendarEvent>;
     /** 全部资源的原文（导出用）；坏记录已在 read() 里剔除。 */
@@ -39,5 +41,8 @@ export declare class LocalBackend {
         uids: Set<string>;
         events: CalendarEvent[];
     }>;
-    importRaw(uid: string, data: string, signal?: AbortSignal): Promise<void>;
+    importRaw(uid: string, data: string, signal?: AbortSignal, source?: {
+        id: string;
+        name: string;
+    }): Promise<void>;
 }

@@ -30,6 +30,12 @@ export const Config: z = z.object({
   refreshToken: z.string().role('secret').volatile(),
   tokenUrl: z.string().volatile(),
   proxyUrl: z.string().volatile(),
+  /**
+   * 同一账户下的多本日历（JSON 数组字符串）。
+   * 保持扁平字符串而不是对象数组：宿主的 settings 描述符与 YAML 落盘没有为嵌套数组做保证，
+   * 凭据也不该跟着数组一起进配置面。
+   */
+  calendarList: z.string().volatile(),
 })
 
 /** 活引用视图；同时接受老宿主与直接调用方给的普通值。 */

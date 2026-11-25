@@ -118,6 +118,43 @@ test('坏数据不会拖垮整份文件：非字符串 ical 与坏 JSON 都当�
   assert.equal((await broken.create({ icalUid: 'uid-after-broken', summary: '仍可写', start: '2026-11-05T02:00:00Z', end: '2026-11-05T03:00:00Z' })).summary, '仍可写')
 })
 
+test('归档来源标签：importRaw 带标签，列表/快照带出，update 保留；旧文件无标签不丢 ical', async () => {
+  const file = freshFile()
+  const backend = new LocalBackend(file)
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//test//EN',
+    'BEGIN:VEVENT', 'UID:uid-src', 'DTSTAMP:20261105T000000Z',
+    'DTSTART:20261105T040000Z', 'DTEND:20261105T050000Z', 'SUMMARY:归档来的日程',
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n')
+  const source = { id: 'https://cal.example/me/calendars/home/', name: '家庭' }
+  await backend.importRaw('uid-src', ics, undefined, source)
+
+  const all = await backend.all()
+  assert.equal(all.length, 1)
+  assert.deepEqual(all[0].calendar, source, '全量读取要带回来源标签')
+
+  const snapshot = await backend.importSnapshot()
+  assert.deepEqual(snapshot.events[0].calendar, source, '快照也要带回标签，去重时能识别来源')
+
+  const updated = await backend.update('local://uid-src', { summary: '归档来的日程（改）' })
+  assert.deepEqual(updated.calendar, source, '更新日程不能把来源标签冲掉')
+
+  // 旧文件：记录没有 calendar 字段，ical 照常读出，事件不带标签；形状不对的标签直接忽略。
+  writeFileSync(file, JSON.stringify({
+    version: 1,
+    revision: 2,
+    events: {
+      'local://old': { ical: ics, revision: 1, updatedAt: '' },
+      'local://broken': { ical: ics, revision: 1, updatedAt: '', calendar: { id: 42, name: '坏标签' } },
+    },
+  }), 'utf8')
+  const legacy = new LocalBackend(file)
+  const legacyEvents = await legacy.all()
+  assert.equal(legacyEvents.length, 2, '记录都保留，坏形状标签被剥掉而不是丢整条')
+  assert.ok(legacyEvents.every((event) => event.calendar === undefined), '两条都不带标签')
+})
+
 test('rawAll 一次取全部原文（导出不能逐条取，那是 N+1）', async () => {
   const file = freshFile()
   const backend = new LocalBackend(file)

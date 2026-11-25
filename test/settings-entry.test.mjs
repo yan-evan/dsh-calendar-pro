@@ -275,24 +275,44 @@ test('iCloud 说明必须走 CalDAV 发现，不能让人去网页设置里找�
   }
   // 手册面向终端用户：协议名、源码路径、命令行都不该出现
   assert.equal(/PROPFIND|\.well-known|src\//.test(m), false, '手册里不要有协议/源码/命令行细节')
-  assert.match(m, /自动发现日历/, '手册要以自动发现按钮为主流程')
+  assert.match(m, /失焦后，自动列出/, '手册要讲清是失焦自动发现，不是按钮')
   const web = read('src/web.ts')
   assert.match(web, /action === 'discoverIcloud'/, '后端要有发现动作')
   const client = read('templates/client.js')
   assert.match(client, /api\("discoverIcloud"/, '前端要调用发现动作')
-  assert.match(client, /"conn\.discover":/, '发现按钮要有文案')
+  assert.equal(/const Btn.*conn\.discover/.test(client), false, '发现不该再有按钮')
+  assert.match(client, /const autoDiscover = /, '账号密码虚焦后自动发现')
+  assert.match(client, /onBlur: key === "username" \|\| key === "password" \? autoDiscover/, '账号与密码虚焦都要触发')
+  assert.match(client, /"conn\.discoverHint":/, '要说明是自动列出，不用点按钮')
   assert.match(client, /"conn\.discoverStale":/, '旧服务端要有可操作的重启提示')
-  // 发现区块必须藏在折叠步骤里，不是常驻在表单最下面
-  const detailsPos = client.indexOf('h("details", { className: "dshc-steps" }')
+  // 步骤常驻（不再折叠），顺序：服务商 → 步骤 → 字段 → 自动发现 → 日历清单
+  assert.equal(/h\("details", { className: "dshc-steps" }/.test(client), false, '步骤不再折叠，直接写在页面上')
+  const stepsPos = client.indexOf('className: "dshc-steps"')
+  const fieldsPos = client.indexOf('className: "dshc-fields", key: "fields"')
   const discoverPos = client.indexOf('className: "dshc-discover"')
-  assert.ok(detailsPos > 0 && discoverPos > detailsPos, '发现区块要在「怎么拿到这些值」的 details 内')
+  const calPos = client.indexOf('className: "dshc-cal-select"')
+  assert.ok(stepsPos > 0 && stepsPos < fieldsPos, '步骤要在字段之前：先知道要准备什么')
+  assert.ok(discoverPos > fieldsPos, '自动发现排在账号密码之后：先填再点')
+  assert.ok(calPos > fieldsPos && calPos < discoverPos, '日历选择就在字段区里（日历集合 URL 那一格），发现状态在其后')
   // 步骤顺序：先填账号密码，最后才自动发现
   const steps = /"steps\.icloud": \[([^\]]*)\]/.exec(client)
   assert.ok(steps, 'iCloud 分步说明要在')
-  assert.ok(steps[1].indexOf('账号填') < steps[1].indexOf('自动发现'), '顺序：1 生成密码 → 2 填凭据 → 3 自动发现')
-  // 发现结果并入 caldavUrl 下拉，不再另起清单撑高表单
+  assert.ok(steps[1].indexOf('账号填') < steps[1].indexOf('自动列出'), '顺序：1 生成密码 → 2 填凭据 → 3 自动列出日历')
+  assert.equal(/点下面的「自动发现日历」/.test(steps[1]), false, '步骤里不该再让人去点按钮')
+  // 多日历：发现结果以勾选清单呈现（可多选），不再塞进 caldavUrl 单值下拉
   assert.equal(/dshc-discover-list/.test(client), false, '日历清单不该再作为独立列表渲染')
-  assert.match(client, /const asSelect = key === "caldavUrl"/, '发现后 URL 字段要变下拉')
+  assert.equal(/const asSelect = key === "caldavUrl"/.test(client), false, '单值下拉已被多选清单取代')
+  assert.match(client, /dshc-cal-trigger/, '多选日历是下拉触发器，不再把一整串勾选框铺在表单上')
+  const triggerCss = /\.dshc-cal-trigger\{([^}]*)\}/.exec(client);
+  assert.ok(triggerCss, '触发器要有样式规则');
+  assert.equal(/font-size|border|background/.test(triggerCss[1]), false, '外壳尺寸、字体、边框都继承 .dshc-input，不自己另设一套');
+  assert.match(client, /className: "dshc-input dshc-cal-trigger/, '触发器带 dshc-input，和普通输入框同一外观');
+  assert.match(client, /\.dshc-field \.dshc-cal-item\{font-size:inherit/, '清单选项不能沿用字段 label 的 12px，要和页面同字号');
+  assert.match(client, /const out = { provider: "icloud" }/, '新建连接默认 iCloud');
+  assert.match(client, /dshc-cal-pop/, '点开触发器才展开勾选清单')
+  assert.match(client, /conn\.calAll/, '清单里要有一键全选')
+  assert.match(client, /out\.calendarList = JSON\.stringify/, '保存时把勾选结果写成 calendarList')
+  assert.match(client, /"conn\.calendarsHint":/, '勾选清单要有说明文案')
   assert.match(client, /"conn\.discoverFound":/, '要有「已找到 N 本」的提示')
   assert.match(client, /"conn\.manualUrl":/, '要保留手动填写入口')
 })
@@ -328,7 +348,8 @@ test('手册面向用户：智能体放首章，不含开发者口吻', () => {
   const firstChapter = m.indexOf('## 1.')
   assert.ok(firstChapter > 0)
   assert.match(m.slice(firstChapter, firstChapter + 120), /用智能体管理日程/, '第一章必须是智能体')
-  assert.ok(m.indexOf('## 1. 用智能体') < m.indexOf('## 3. 连接日历'), '智能体讲完再讲连接')
+  const connectChapter = m.search(/^## \d+\. 连接/m)
+  assert.ok(connectChapter > firstChapter, '智能体讲完再讲连接')
   // 用户手册不该出现给开发者看的元话语
   for (const phrase of ['本手册按', '功能概览见', '数据层面', '持久化说明', '后端强制']) {
     assert.equal(m.includes(phrase), false, '不该出现：' + phrase)

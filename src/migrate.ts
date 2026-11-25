@@ -45,7 +45,7 @@ export interface MigrateResult {
 }
 
 /** 「看起来是同一件事」的判据：标题（去空白、忽略大小写）+ 起止时间完全一致。 */
-function shapeOf(event: CalendarEvent): string {
+export function shapeOf(event: CalendarEvent): string {
   return [event.summary.trim().toLowerCase(), event.start, event.end].join('\u0000')
 }
 
